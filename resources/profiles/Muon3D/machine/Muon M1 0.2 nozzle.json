@@ -1,0 +1,19 @@
+{
+    "type": "machine",
+    "setting_id": "GM002",
+    "name": "Muon M1 0.2 nozzle",
+    "from": "system",
+    "instantiation": "true",
+    "inherits": "fdm_common_muon_m1",
+    "printer_model": "Muon M1",
+    "nozzle_diameter": [
+        "0.2"
+    ],
+    "max_layer_height": [
+        "0.16"
+    ],
+    "min_layer_height": [
+        "0.04"
+    ],
+    "printer_variant": "0.2"
+}

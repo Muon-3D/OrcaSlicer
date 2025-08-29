@@ -1,0 +1,13 @@
+{
+    "type": "machine",
+    "setting_id": "GM001",
+    "name": "Muon M1 0.4 nozzle",
+    "from": "system",
+    "instantiation": "true",
+    "inherits": "fdm_common_muon_m1",
+    "printer_model": "Muon M1",
+    "nozzle_diameter": [
+        "0.4"
+    ],
+    "printer_variant": "0.4"
+}
