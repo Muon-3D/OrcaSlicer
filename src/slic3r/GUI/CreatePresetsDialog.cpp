@@ -72,11 +72,11 @@ static const std::vector<std::string> printer_vendors =
      "Creality",           "DeltaMaker",         "Dremel",             "Elegoo",             "Flashforge",
      "FLSun",              "FlyingBear",         "Folgertech",         "Geeetech",           "Ginger Additive",
      "InfiMech",           "Kingroon",           "Lulzbot",            "MagicMaker",         "Mellow",
-     "Orca Arena Printer", "Peopoly",            "Positron 3D",        "Prusa",              "Qidi",
-     "Raise3D",            "RatRig",             "RolohaunDesign",     "SecKit",             "Snapmaker",
-     "Sovol",              "Thinker X400",       "Tronxy",             "TwoTrees",           "UltiMaker",
-     "Vivedino",           "Volumic",            "Voron",              "Voxelab",            "Vzbot",
-     "Wanhao",             "Z-Bolt"};
+     "Muon3D",             "Orca Arena Printer", "Peopoly",            "Positron 3D",        "Prusa",
+     "Qidi",               "Raise3D",            "RatRig",             "RolohaunDesign",     "SecKit",
+     "Snapmaker",          "Sovol",              "Thinker X400",       "Tronxy",             "TwoTrees",
+     "UltiMaker",          "Vivedino",           "Volumic",            "Voron",              "Voxelab",
+     "Vzbot",              "Wanhao",             "Z-Bolt"};
 
 static const std::unordered_map<std::string, std::vector<std::string>> printer_model_map =
     {{"Anker",             {"Anker M5",                   "Anker M5 All-Metal Hot End", "Anker M5C"}},
@@ -122,6 +122,7 @@ static const std::unordered_map<std::string, std::vector<std::string>> printer_m
      {"Lulzbot",           {"Lulzbot Taz 6",        "Lulzbot Taz 4 or 5",   "Lulzbot Taz Pro Dual", "Lulzbot Taz Pro S"}},
      {"MagicMaker",        {"MM hqs hj",   "MM hqs SF",   "MM hj SK",    "MM BoneKing", "MM slb"}},
      {"Mellow",            {"M1"}},
+     {"Muon3D",            {"Muon M1"}},
      {"Orca Arena Printer",{"Orca Arena X1 Carbon"}},
      {"Peopoly",           {"Peopoly Magneto X"}},
      {"Positron 3D",       {"The Positron"}},
