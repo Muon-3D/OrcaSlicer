@@ -1,7 +1,7 @@
 {
   "type": "process",
   "setting_id": "GP004",
-  "name": "0.40mm Standard @Muon M1",
+  "name": "0.40mm Extra Draft @Muon M1",
   "from": "system",
   "instantiation": "true",
   "inherits": "fdm_process_muon_m1_common",
