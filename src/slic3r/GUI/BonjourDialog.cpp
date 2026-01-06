@@ -120,8 +120,11 @@ bool BonjourDialog::show_and_lookup()
 	// so that both threads can access it safely.
 	auto dguard = std::make_shared<LifetimeGuard>(this);
 
-	// Note: More can be done here when we support discovery of hosts other than Octoprint and SL1
-	Bonjour::TxtKeys txt_keys { "version", "model" };
+	// Ask for the TXT keys we care about
+	// - "version" for OctoPrint version column
+	// - "model" for FFF/SLA filtering
+	// - "addr_pref" optional hint (e.g. "hostname" or "ip") from the service
+	Bonjour::TxtKeys txt_keys { "version", "model", "addr_pref" };
 
     bonjour = Bonjour("octoprint")
 		.set_txt_keys(std::move(txt_keys))
@@ -189,8 +192,23 @@ void BonjourDialog::on_reply(BonjourReplyEvent &e)
 	// The whole list is recreated so that we benefit from it already being sorted in the set.
 	// (And also because wxListView's sorting API is bananas.)
 	for (const auto &reply : *replies) {
-		auto item = list->InsertItem(0, reply.full_address);
-		list->SetItem(item, 1, reply.hostname);
+		// Check for optional preference provided by the service
+		bool prefer_hostname = false;
+		{
+			auto it_pref = reply.txt_data.find("addr_pref");
+			if (it_pref != reply.txt_data.end() && it_pref->second == "hostname") {
+				prefer_hostname = true;
+			}
+		}
+
+		// Column 0 ("Address") is what get_selected() will return.
+		// If addr_pref=hostname, put hostname there and IP in column 1.
+		// Otherwise keep current behavior: IP in col0, hostname in col1.
+		wxString primary   = prefer_hostname ? reply.hostname    : reply.full_address;
+		wxString secondary = prefer_hostname ? reply.full_address : reply.hostname;
+
+		auto item = list->InsertItem(0, primary);
+		list->SetItem(item, 1, secondary);
 		list->SetItem(item, 2, reply.service_name);
 
 		if (tech == ptFFF) {
@@ -200,6 +218,7 @@ void BonjourDialog::on_reply(BonjourReplyEvent &e)
 			}
 		}
 	}
+
 
 	const int em = GUI::wxGetApp().em_unit();
 

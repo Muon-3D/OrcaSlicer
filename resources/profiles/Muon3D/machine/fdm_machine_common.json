@@ -31,19 +31,19 @@
         "10000"
     ],
     "machine_max_acceleration_z": [
-        "500"
+        "800"
     ],
     "machine_max_speed_e": [
         "60"
     ],
     "machine_max_speed_x": [
-        "500"
+        "800"
     ],
     "machine_max_speed_y": [
-        "500"
+        "800"
     ],
     "machine_max_speed_z": [
-        "10"
+        "15"
     ],
     "machine_max_jerk_e": [
         "5"
