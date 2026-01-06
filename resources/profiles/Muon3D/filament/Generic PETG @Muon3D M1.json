@@ -1,7 +1,7 @@
 {
     "type": "filament",
     "setting_id": "Muon_M1_PETG_01",
-    "name": "Generic PETG @Muon3D M1 0.4 nozzle",
+    "name": "Generic PETG @Muon3D M1",
     "from": "system",
     "instantiation": "true",
     "inherits": "Generic PETG @System",
