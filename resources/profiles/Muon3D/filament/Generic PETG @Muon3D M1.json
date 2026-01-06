@@ -1,0 +1,50 @@
+{
+    "type": "filament",
+    "setting_id": "Muon_M1_PETG_01",
+    "name": "Generic PETG @Muon3D M1 0.4 nozzle",
+    "from": "system",
+    "instantiation": "true",
+    "inherits": "Generic PETG @System",
+    "compatible_printers": [
+        "Muon3D M1 0.2 nozzle",
+        "Muon3D M1 0.4 nozzle",
+        "Muon3D M1 0.6 nozzle",
+        "Muon3D M1 0.8 nozzle"
+    ],
+    "nozzle_temperature": [
+        "240"
+    ],
+    "nozzle_temperature_initial_layer": [
+        "245"
+    ],
+    "overhang_fan_speed": [
+        "30"
+    ],
+    "slow_down_layer_time": [
+        "3"
+    ],
+    "slow_down_min_speed": [
+        "30"
+    ],
+    "hot_plate_temp": [
+        "65"
+    ],
+    "hot_plate_temp_initial_layer": [
+        "70"
+    ],
+        "dont_slow_down_outer_wall": [
+        "1"
+    ],
+    "fan_cooling_layer_time": [
+        "30"
+    ],
+    "fan_max_speed": [
+        "25"
+    ],
+    "fan_min_speed": [
+        "6"
+    ],
+    "filament_max_volumetric_speed": [
+        "30"
+    ]
+}
