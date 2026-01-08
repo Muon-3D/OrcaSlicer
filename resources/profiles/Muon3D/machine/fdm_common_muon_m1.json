@@ -47,7 +47,7 @@
   "change_filament_gcode": "",
   "wipe": ["1"],
   "default_filament_profile": ["Generic PLA @System"],
-  "default_print_profile": "0.20mm Standard @Muon M1",
+  "default_print_profile": "0.20mm Standard @Muon3D M1",
   "bed_exclude_area": [
         "80.5x0",
         "80.5x15.194",
