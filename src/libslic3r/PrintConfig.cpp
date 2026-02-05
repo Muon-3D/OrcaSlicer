@@ -510,6 +510,12 @@ void PrintConfigDef::init_common_params()
     def->gui_type = ConfigOptionDef::GUIType::one_string;
     def->set_default_value(new ConfigOptionPoints{ Vec2d(0, 0) });
 
+    def = this->add("avoid_bed_exclude_travel", coBool);
+    def->label = L("Avoid crossing excluded bed area");
+    def->tooltip = L("When enabled, travel moves will detour to avoid crossing the excluded bed area.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
     def = this->add("bed_custom_texture", coString);
     def->label = L("Bed custom texture");
     def->mode = comAdvanced;

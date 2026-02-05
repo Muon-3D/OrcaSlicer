@@ -3877,6 +3877,7 @@ void TabPrinter::build_fff()
         Option option = optgroup->get_option("bed_exclude_area");
         option.opt.full_width = true;
         optgroup->append_single_option_line(option);
+        optgroup->append_single_option_line("avoid_bed_exclude_travel");
         // optgroup->append_single_option_line("printable_area");
         optgroup->append_single_option_line("printable_height");
         optgroup->append_single_option_line("support_multi_bed_types","bed-types");
@@ -3884,6 +3885,28 @@ void TabPrinter::build_fff()
         optgroup->append_single_option_line("best_object_pos");
         optgroup->append_single_option_line("z_offset");
         optgroup->append_single_option_line("preferred_orientation");
+        auto update_bed_exclude_travel_state = [this, optgroup]() {
+            const auto *exclude_area = m_config->option<ConfigOptionPoints>("bed_exclude_area");
+            const bool has_exclude_area = exclude_area && exclude_area->values.size() >= 3;
+            optgroup->enable_field("avoid_bed_exclude_travel", has_exclude_area);
+        };
+        update_bed_exclude_travel_state();
+        optgroup->m_on_change = [this, optgroup, update_bed_exclude_travel_state](t_config_option_key opt_key, boost::any value) {
+            bool was_toggle_enabled = false;
+            if (Field *toggle_field = optgroup->get_field("avoid_bed_exclude_travel")) {
+                if (wxWindow *toggle_window = toggle_field->getWindow())
+                    was_toggle_enabled = toggle_window->IsEnabled();
+            }
+            update_bed_exclude_travel_state();
+            if (opt_key == "bed_exclude_area") {
+                const auto *exclude_area = m_config->option<ConfigOptionPoints>("bed_exclude_area");
+                const bool has_exclude_area = exclude_area && exclude_area->values.size() >= 3;
+                if (!was_toggle_enabled && has_exclude_area && !m_config->opt_bool("avoid_bed_exclude_travel"))
+                    optgroup->set_value("avoid_bed_exclude_travel", true, true);
+            }
+            update_dirty();
+            on_value_change(opt_key, value);
+        };
 
         optgroup = page->new_optgroup(L("Advanced"), L"param_advanced");
         optgroup->append_single_option_line("printer_structure");
