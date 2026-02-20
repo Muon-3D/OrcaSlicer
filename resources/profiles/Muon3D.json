@@ -1,6 +1,6 @@
 {
     "name": "Muon3D",
-    "version":  "02.03.00.03",
+    "version":  "02.03.00.04",
     "force_update": "0",
     "description": "Muon3D Printer Profile",
     "machine_model_list": [
@@ -59,6 +59,14 @@
         {
             "name": "Generic PETG @Muon3D M1",
             "sub_path": "filament/Generic PETG @Muon3D M1.json"
+        },
+        {
+            "name": "Generic PLA @Muon3D M1",
+            "sub_path": "filament/Generic PLA @Muon3D M1.json"
+        },
+        {
+            "name": "Generic ASA @Muon3D M1",
+            "sub_path": "filament/Generic ASA @Muon3D M1.json"
         }
     ],
     "machine_list": [

@@ -8,5 +8,5 @@
     "bed_model": "Muon_M1_bed_model.stl",
     "bed_texture": "Muon_M1_bed_texture.svg",
     "hotend_model": "",
-    "default_materials": "Generic PLA @System;Generic PLA-CF @System;Generic PETG @Muon3D M1;Generic TPU @System;Generic ASA @System;Generic PC @System;Generic PVA @System;Generic PA @System;Generic PA-CF @System"
+    "default_materials": "Generic PLA @Muon3D M1;Generic PLA-CF @System;Generic PETG @Muon3D M1;Generic TPU @System;Generic ASA @Muon3D M1;Generic PC @System;Generic PVA @System;Generic PA @System;Generic PA-CF @System"
 }

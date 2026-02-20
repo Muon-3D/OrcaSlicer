@@ -1,0 +1,35 @@
+{
+    "type": "filament",
+    "setting_id": "Muon_M1_ASA_01",
+    "name": "Generic ASA @Muon3D M1",
+    "from": "system",
+    "instantiation": "true",
+    "inherits": "Generic ASA @System",
+    "compatible_printers": [
+        "Muon3D M1 0.2 nozzle",
+        "Muon3D M1 0.4 nozzle",
+        "Muon3D M1 0.6 nozzle",
+        "Muon3D M1 0.8 nozzle"
+    ],
+    "fan_cooling_layer_time": [
+        "45"
+    ],
+    "fan_max_speed": [
+        "30"
+    ],
+    "fan_min_speed": [
+        "12"
+    ],
+    "filament_max_volumetric_speed": [
+        "30"
+    ],
+    "overhang_fan_speed": [
+        "35"
+    ],
+    "overhang_fan_threshold": [
+        "25%"
+    ],
+    "slow_down_layer_time": [
+        "8"
+    ]
+}

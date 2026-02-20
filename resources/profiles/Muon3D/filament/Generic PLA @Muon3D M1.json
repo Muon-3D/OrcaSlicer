@@ -1,0 +1,56 @@
+{
+    "type": "filament",
+    "setting_id": "Muon_M1_PLA_01",
+    "name": "Generic PLA @Muon3D M1",
+    "from": "system",
+    "instantiation": "true",
+    "inherits": "Generic PETG @Muon3D M1",
+    "compatible_printers": [
+        "Muon3D M1 0.2 nozzle",
+        "Muon3D M1 0.4 nozzle",
+        "Muon3D M1 0.6 nozzle",
+        "Muon3D M1 0.8 nozzle"
+    ],
+    "dont_slow_down_outer_wall": [
+        "0"
+    ],
+    "enable_pressure_advance": [
+        "1"
+    ],
+    "fan_max_speed": [
+        "30"
+    ],
+    "filament_max_volumetric_speed": [
+        "48"
+    ],
+    "filament_type": [
+        "PLA"
+    ],
+    "hot_plate_temp": [
+        "50"
+    ],
+    "hot_plate_temp_initial_layer": [
+        "60"
+    ],
+    "nozzle_temperature": [
+        "220"
+    ],
+    "nozzle_temperature_initial_layer": [
+        "215"
+    ],
+    "nozzle_temperature_range_high": [
+        "235"
+    ],
+    "nozzle_temperature_range_low": [
+        "190"
+    ],
+    "pressure_advance": [
+        "0.03"
+    ],
+    "slow_down_min_speed": [
+        "5"
+    ],
+        "overhang_fan_threshold": [
+        "25%"
+    ]
+}
