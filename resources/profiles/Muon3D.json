@@ -1,6 +1,6 @@
 {
     "name": "Muon3D",
-    "version":  "02.03.00.04",
+    "version":  "02.03.00.07",
     "force_update": "0",
     "description": "Muon3D Printer Profile",
     "machine_model_list": [
@@ -39,6 +39,10 @@
             "sub_path": "process/0.24mm Draft @Muon3D M1.json"
         },
         {
+            "name": "0.25mm Ultra High Speed @Muon3D M1",
+            "sub_path": "process/0.25mm Ultra High Speed @Muon3D M1.json"
+        },
+        {
             "name": "0.28mm Extra Draft @Muon3D M1",
             "sub_path": "process/0.28mm Extra Draft @Muon3D M1.json"
         },
@@ -63,6 +67,18 @@
         {
             "name": "Generic PLA @Muon3D M1",
             "sub_path": "filament/Generic PLA @Muon3D M1.json"
+        },
+        {
+            "name": "Generic PLA Matte @Muon3D M1",
+            "sub_path": "filament/Generic PLA Matte @Muon3D M1.json"
+        },
+        {
+            "name": "Generic PLA Silk @Muon3D M1",
+            "sub_path": "filament/Generic PLA Silk @Muon3D M1.json"
+        },
+        {
+            "name": "Generic PLA High Speed @Muon3D M1",
+            "sub_path": "filament/Generic PLA High Speed @Muon3D M1.json"
         },
         {
             "name": "Generic ASA @Muon3D M1",

@@ -11,25 +11,37 @@
         "Muon3D M1 0.6 nozzle",
         "Muon3D M1 0.8 nozzle"
     ],
+    "overhang_fan_speed": [
+        "30"
+    ],
+    "slow_down_layer_time": [
+        "3"
+    ],
+    "slow_down_min_speed": [
+        "5"
+    ],
+    "hot_plate_temp": [
+        "95"
+    ],
+    "hot_plate_temp_initial_layer": [
+        "100"
+    ],
+    "dont_slow_down_outer_wall": [
+        "0"
+    ],
     "fan_cooling_layer_time": [
-        "45"
+        "60"
     ],
     "fan_max_speed": [
         "30"
     ],
     "fan_min_speed": [
-        "12"
+        "6"
     ],
     "filament_max_volumetric_speed": [
         "30"
     ],
-    "overhang_fan_speed": [
-        "35"
-    ],
     "overhang_fan_threshold": [
         "25%"
-    ],
-    "slow_down_layer_time": [
-        "8"
     ]
 }
