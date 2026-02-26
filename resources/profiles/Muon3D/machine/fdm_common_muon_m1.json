@@ -33,7 +33,7 @@
   "retraction_minimum_travel": ["1"],
   "retract_before_wipe": ["70%"],
   "retract_when_changing_layer": ["0"],
-  "retraction_length": ["0.2"],
+  "retraction_length": ["0.3"],
   "retract_length_toolchange": ["2"],
   "z_hop": ["0.4"],
   "retract_restart_extra": ["0"],
