@@ -6,6 +6,6 @@
     "instantiation": "true",
     "inherits": "Generic PLA @Muon3D M1",
     "filament_max_volumetric_speed": [
-        "22"
+        "14"
     ]
 }
