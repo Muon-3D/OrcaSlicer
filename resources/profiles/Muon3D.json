@@ -1,6 +1,6 @@
 {
     "name": "Muon3D",
-    "version":  "02.03.00.07",
+    "version":  "02.03.00.08",
     "force_update": "0",
     "description": "Muon3D Printer Profile",
     "machine_model_list": [
@@ -67,6 +67,14 @@
         {
             "name": "Generic PLA @Muon3D M1",
             "sub_path": "filament/Generic PLA @Muon3D M1.json"
+        },
+        {
+            "name": "Generic TPU @Muon3D M1",
+            "sub_path": "filament/Generic TPU @Muon3D M1.json"
+        },
+        {
+            "name": "Polyflex TPU90 @Muon3D M1",
+            "sub_path": "filament/Polyflex TPU90 @Muon3D M1.json"
         },
         {
             "name": "Generic PLA Matte @Muon3D M1",
