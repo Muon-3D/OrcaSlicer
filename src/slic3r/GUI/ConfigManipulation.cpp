@@ -642,8 +642,15 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, co
     toggle_line("default_junction_deviation", gcflavor == gcfMarlinFirmware);
 
     bool have_skirt = config->opt_int("skirt_loops") > 0;
+    const int skirt_loops = config->opt_int("skirt_loops");
+    const int skirt_loops_after_first_layer = config->opt_int("skirt_loops_after_first_layer");
+    if (skirt_loops_after_first_layer == 0 || (skirt_loops > 0 && skirt_loops_after_first_layer > skirt_loops)) {
+        DynamicPrintConfig new_conf = *config;
+        new_conf.set_key_value("skirt_loops_after_first_layer", new ConfigOptionInt(skirt_loops_after_first_layer == 0 ? -1 : skirt_loops));
+        apply(config, &new_conf);
+    }
     toggle_field("skirt_height", have_skirt && config->opt_enum<DraftShield>("draft_shield") != dsEnabled);
-    toggle_line("single_loop_draft_shield", have_skirt); // ORCA: Display one wall if skirt enabled
+    toggle_line("skirt_loops_after_first_layer", have_skirt);
     for (auto el : {"skirt_type", "min_skirt_length", "skirt_distance", "skirt_start_angle", "skirt_speed", "draft_shield"})
         toggle_field(el, have_skirt);
 

@@ -183,7 +183,7 @@
     "seam_slope_steps": "10",
     "seam_slope_type": "none",
     "single_extruder_multi_material_priming": "1",
-    "single_loop_draft_shield": "0",
+    "skirt_loops_after_first_layer": "-1",
     "skirt_distance": "2",
     "skirt_height": "1",
     "skirt_loops": "0",

@@ -4564,11 +4564,14 @@ void PrintConfigDef::init_fff_params()
     def->max = 10000;
     def->set_default_value(new ConfigOptionInt(1));
     
-    def = this->add("single_loop_draft_shield", coBool);
-    def->label = L("Single loop after first layer");
-    def->tooltip = L("Limits the skirt/draft shield loops to one wall after the first layer. This is useful, on occasion, to conserve filament but may cause the draft shield/skirt to warp / crack.");
+    def = this->add("skirt_loops_after_first_layer", coInt);
+    def->label = L("Loops after first layer");
+    def->tooltip = L("Number of skirt / draft shield loops to print after the first layer. Set to -1 to use the same number as Skirt loops. "
+                     "Values larger than Skirt loops are not permitted. Default value: -1");
+    def->min = -1;
+    def->max = 10;
     def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionBool(false));
+    def->set_default_value(new ConfigOptionInt(-1));
 
     def = this->add("draft_shield", coEnum);
     def->label = L("Draft shield");
@@ -6819,6 +6822,9 @@ void PrintConfigDef::handle_legacy(t_config_option_key &opt_key, std::string &va
         // old file "0" is None, "2" is Traditional
         // new file "0" is Traditional, erase "2"
         value = "0";
+    } else if (opt_key == "single_loop_draft_shield") {
+        opt_key = "skirt_loops_after_first_layer";
+        value = (value == "1" || value == "true") ? "1" : "-1";
     } else if (opt_key == "support_type" && value == "normal") {
         value = "normal(manual)";
     } else if (opt_key == "support_type" && value == "tree") {
@@ -7096,6 +7102,15 @@ void DynamicPrintConfig::normalize_fdm(int used_filaments)
         }
         */
     }
+
+    if (auto *opt_skirt_loops_after_first_layer = this->opt<ConfigOptionInt>("skirt_loops_after_first_layer", false); opt_skirt_loops_after_first_layer) {
+        if (opt_skirt_loops_after_first_layer->value == 0) {
+            opt_skirt_loops_after_first_layer->value = -1;
+        } else if (auto *opt_skirt_loops = this->opt<ConfigOptionInt>("skirt_loops", false);
+                   opt_skirt_loops && opt_skirt_loops->value > 0 && opt_skirt_loops_after_first_layer->value > opt_skirt_loops->value) {
+            opt_skirt_loops_after_first_layer->value = opt_skirt_loops->value;
+        }
+    }
 }
 
 //BBS:divide normalize_fdm to 2 steps and call them one by one in Print::Apply
@@ -7142,6 +7157,15 @@ void DynamicPrintConfig::normalize_fdm_1()
     if (auto *opt_gcode_resolution = this->opt<ConfigOptionFloat>("resolution", false); opt_gcode_resolution)
         // Resolution will be above 1um.
         opt_gcode_resolution->value = std::max(opt_gcode_resolution->value, 0.001);
+
+    if (auto *opt_skirt_loops_after_first_layer = this->opt<ConfigOptionInt>("skirt_loops_after_first_layer", false); opt_skirt_loops_after_first_layer) {
+        if (opt_skirt_loops_after_first_layer->value == 0) {
+            opt_skirt_loops_after_first_layer->value = -1;
+        } else if (auto *opt_skirt_loops = this->opt<ConfigOptionInt>("skirt_loops", false);
+                   opt_skirt_loops && opt_skirt_loops->value > 0 && opt_skirt_loops_after_first_layer->value > opt_skirt_loops->value) {
+            opt_skirt_loops_after_first_layer->value = opt_skirt_loops->value;
+        }
+    }
 
     return;
 }
@@ -7392,6 +7416,12 @@ std::map<std::string, std::string> validate(const FullPrintConfig &cfg, bool und
     }
     if (cfg.bottom_shell_layers < 0) {
         error_message.emplace("bottom_shell_layers", L("invalid value ") + std::to_string(cfg.bottom_shell_layers));
+    }
+
+    if (cfg.skirt_loops_after_first_layer.value < -1 ||
+        cfg.skirt_loops_after_first_layer.value == 0 ||
+        (cfg.skirt_loops.value > 0 && cfg.skirt_loops_after_first_layer.value > cfg.skirt_loops.value)) {
+        error_message.emplace("skirt_loops_after_first_layer", L("invalid value ") + std::to_string(cfg.skirt_loops_after_first_layer.value));
     }
 
     if (cfg.use_firmware_retraction.value &&

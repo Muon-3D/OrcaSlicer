@@ -2432,7 +2432,7 @@ optgroup->append_single_option_line("skirt_loops", "others_settings_skirt#loops"
         optgroup->append_single_option_line("skirt_speed", "others_settings_skirt#speed");
         optgroup->append_single_option_line("skirt_height", "others_settings_skirt#height");
         optgroup->append_single_option_line("draft_shield", "others_settings_skirt#shield");
-        optgroup->append_single_option_line("single_loop_draft_shield", "others_settings_skirt#single-loop-after-first-layer");
+        optgroup->append_single_option_line("skirt_loops_after_first_layer", "others_settings_skirt#loops-after-first-layer");
 
         optgroup = page->new_optgroup(L("Brim"), L"param_adhension");
         optgroup->append_single_option_line("brim_type", "others_settings_brim#type");
