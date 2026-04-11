@@ -43,5 +43,11 @@
     ],
     "slow_down_layer_time": [
         "3"
+    ],
+    "fan_max_speed": [
+        "100"
+    ],    
+    "overhang_fan_speed": [
+        "100"
     ]
 }
