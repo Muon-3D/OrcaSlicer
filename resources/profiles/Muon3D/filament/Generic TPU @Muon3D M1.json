@@ -45,7 +45,7 @@
         "30"
     ],
     "overhang_fan_threshold": [
-        "25%"
+        "50%"
     ],
     "slow_down_min_speed": [
         "0"

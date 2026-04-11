@@ -17,6 +17,10 @@
     "internal_solid_infill_speed": "250",
     "top_surface_speed": "200",
     "gap_infill_speed": "200",
+    "bridge_speed": "30",
+    "internal_bridge_speed": "75",
+    "bridge_flow": "2",
+    "internal_bridge_flow": "1",
     "sparse_infill_speed": "250",
     "travel_speed": "600",
     "travel_jerk": "12",
@@ -26,5 +30,10 @@
     "infill_jerk": "12",
     "top_surface_jerk": "7",
     "initial_layer_jerk": "7",
-    "exclude_object": "1"
+    "exclude_object": "1",
+    "counterbore_hole_bridging": "partiallybridge",
+    "hole_to_polyhole": "1",
+    "skirt_loops": "2",
+    "support_critical_regions_only": "1",
+    "wipe_before_external_loop": "1"
 }

@@ -33,7 +33,7 @@
         "250"
     ],
     "overhang_fan_threshold": [
-        "25%"
+        "50%"
     ],
     "pressure_advance": [
         "0.014"

@@ -6,8 +6,8 @@
     "inherits": "fdm_process_muon_m1_common",
     "instantiation": "true",
     "layer_height": "0.2",
-    "gap_fill_target": "topbottom",
-    "skirt_loops": "1",
+    "gap_fill_target": "nowhere",
+    "skirt_loops": "2",
     "support_type": "tree(auto)",
     "compatible_printers": [
         "Muon3D M1 0.4 nozzle",

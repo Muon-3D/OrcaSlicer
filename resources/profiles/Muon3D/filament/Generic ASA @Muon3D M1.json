@@ -15,25 +15,25 @@
         "30"
     ],
     "slow_down_layer_time": [
-        "3"
+        "4"
     ],
     "slow_down_min_speed": [
         "5"
     ],
     "hot_plate_temp": [
-        "90"
+        "84"
     ],
     "hot_plate_temp_initial_layer": [
-        "95"
+        "88"
     ],
     "dont_slow_down_outer_wall": [
         "0"
     ],
     "fan_cooling_layer_time": [
-        "60"
+        "25"
     ],
     "fan_max_speed": [
-        "30"
+        "25"
     ],
     "fan_min_speed": [
         "6"
@@ -42,7 +42,7 @@
         "30"
     ],
     "overhang_fan_threshold": [
-        "25%"
+        "50%"
     ],
     "enable_pressure_advance": [
         "1"
