@@ -33,7 +33,9 @@
     "exclude_object": "1",
     "counterbore_hole_bridging": "partiallybridge",
     "hole_to_polyhole": "1",
+    "skirt_height": "1",
     "skirt_loops": "2",
+    "skirt_speed": "100",
     "support_critical_regions_only": "1",
     "wipe_before_external_loop": "1"
 }

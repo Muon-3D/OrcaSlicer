@@ -10,7 +10,7 @@ endif()
 if(NOT DEFINED BBL_INTERNAL_TESTING)
 set(BBL_INTERNAL_TESTING "1")
 endif()
-set(SoftFever_VERSION "2.3.1-muon3d-alpha-1")
+set(SoftFever_VERSION "2.3.1-muon3d-alpha-2")
 string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)"
        SoftFever_VERSION_MATCH ${SoftFever_VERSION})
 set(ORCA_VERSION_MAJOR ${CMAKE_MATCH_1})
