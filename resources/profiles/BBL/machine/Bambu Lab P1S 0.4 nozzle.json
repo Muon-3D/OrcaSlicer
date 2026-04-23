@@ -16,6 +16,7 @@
         "18x28",
         "0x28"
     ],
+    "avoid_bed_exclude_travel": "1",
     "default_filament_profile": [
         "Bambu PLA Basic @BBL X1C"
     ],

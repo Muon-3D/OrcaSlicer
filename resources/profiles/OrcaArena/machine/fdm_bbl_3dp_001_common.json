@@ -14,6 +14,7 @@
     "bed_exclude_area": [
         "0x0"
     ],
+    "avoid_bed_exclude_travel": "1",
     "default_filament_profile": [
         "Arena PLA Basic @Arena X1C"
     ],
