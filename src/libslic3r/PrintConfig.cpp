@@ -509,7 +509,7 @@ void PrintConfigDef::init_common_params()
     def->label = L("Bed exclude area");
     def->tooltip = L("Unprintable area in XY plane. For example, X1 Series printers use the front left corner to cut filament during filament change. "
         "The area is expressed as polygon by points in following format: \"XxY, XxY, ...\". "
-        "Use \"ZMIN..ZMAX;XxY, XxY, ...\" for a 3D Z-limited exclusion volume."
+        "Use \"ZMIN..ZMAX;XxY, XxY, ...\" for a 3D Z-limited exclusion volume. "
         "Separate multiple areas or volumes with \"|\". ");
     def->mode = comAdvanced;
     def->gui_type = ConfigOptionDef::GUIType::one_string;
@@ -8618,7 +8618,7 @@ static void append_legacy_bed_exclude_regions(
         polygon.points.emplace_back(scale_(pt.x()), scale_(pt.y()));
     polygon.make_counter_clockwise();
 
-    out.push_back({ std::move(polygon), 0.0, printable_height, false });
+    out.push_back({ std::move(polygon), 0.0, printable_height, false, false });
 }
 
 static void append_bed_exclusion_volume_regions(
@@ -8681,7 +8681,7 @@ static void append_bed_exclusion_volume_regions(
         if (! polygon)
             continue;
 
-        out.push_back({ std::move(*polygon), z_min, z_max, true });
+        out.push_back({ std::move(*polygon), z_min, z_max, true, has_z_range });
     }
 }
 

@@ -3240,6 +3240,49 @@ const ExPolygons& ModelInstance::z_slab_projected_footprint_2d(double z_min, dou
 
     Polygons projected_triangles;
     const ModelObject *model_object = get_object();
+    auto clip_polygon_min_z = [](const std::vector<Vec3d> &input, double z_min) {
+        std::vector<Vec3d> output;
+        if (input.empty())
+            return output;
+
+        auto inside = [z_min](const Vec3d &p) { return p.z() >= z_min; };
+        Vec3d prev = input.back();
+        bool prev_inside = inside(prev);
+        for (const Vec3d &curr : input) {
+            const bool curr_inside = inside(curr);
+            if (curr_inside != prev_inside) {
+                const double t = (z_min - prev.z()) / (curr.z() - prev.z());
+                output.emplace_back(prev + t * (curr - prev));
+            }
+            if (curr_inside)
+                output.emplace_back(curr);
+            prev = curr;
+            prev_inside = curr_inside;
+        }
+        return output;
+    };
+    auto clip_polygon_max_z = [](const std::vector<Vec3d> &input, double z_max) {
+        std::vector<Vec3d> output;
+        if (input.empty())
+            return output;
+
+        auto inside = [z_max](const Vec3d &p) { return p.z() <= z_max; };
+        Vec3d prev = input.back();
+        bool prev_inside = inside(prev);
+        for (const Vec3d &curr : input) {
+            const bool curr_inside = inside(curr);
+            if (curr_inside != prev_inside) {
+                const double t = (z_max - prev.z()) / (curr.z() - prev.z());
+                output.emplace_back(prev + t * (curr - prev));
+            }
+            if (curr_inside)
+                output.emplace_back(curr);
+            prev = curr;
+            prev_inside = curr_inside;
+        }
+        return output;
+    };
+
     for (const ModelVolume *volume : model_object->volumes) {
         if (! volume->is_model_part())
             continue;
@@ -3261,15 +3304,19 @@ const ExPolygons& ModelInstance::z_slab_projected_footprint_2d(double z_min, dou
             if (tri_max_z < z_min || tri_min_z > z_max)
                 continue;
 
-            Polygon triangle;
-            triangle.points.emplace_back(scale_(p0.x()), scale_(p0.y()));
-            triangle.points.emplace_back(scale_(p1.x()), scale_(p1.y()));
-            triangle.points.emplace_back(scale_(p2.x()), scale_(p2.y()));
-            if (std::abs(triangle.area()) <= SCALED_EPSILON)
+            std::vector<Vec3d> clipped = clip_polygon_max_z(clip_polygon_min_z({ p0, p1, p2 }, z_min), z_max);
+            if (clipped.size() < 3)
                 continue;
 
-            triangle.make_counter_clockwise();
-            projected_triangles.emplace_back(std::move(triangle));
+            Polygon projected;
+            projected.points.reserve(clipped.size());
+            for (const Vec3d &p : clipped)
+                projected.points.emplace_back(scale_(p.x()), scale_(p.y()));
+            if (std::abs(projected.area()) <= SCALED_EPSILON)
+                continue;
+
+            projected.make_counter_clockwise();
+            projected_triangles.emplace_back(std::move(projected));
         }
     }
 

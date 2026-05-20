@@ -17,6 +17,7 @@
 
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/Polygon.hpp"
+#include "libslic3r/Polyline.hpp"
 #include "libslic3r/ClipperUtils.hpp"
 #include "libslic3r/BoundingBox.hpp"
 #include "libslic3r/Geometry.hpp"
@@ -448,6 +449,159 @@ static bool init_model_from_lines(GLModel &model, const Lines3 &lines)
     return true;
 }
 
+static ExPolygon expolygon_from_polygon(const Polygon &polygon)
+{
+    ExPolygon expolygon;
+    expolygon.contour = polygon;
+    expolygon.contour.make_counter_clockwise();
+    return expolygon;
+}
+
+static bool init_model_from_polygons(GLModel &model, const Polygons &polygons, float z)
+{
+    model.reset();
+    if (polygons.empty())
+        return true;
+
+    GLModel::Geometry init_data;
+    init_data.format = { GLModel::Geometry::EPrimitiveType::Triangles, GLModel::Geometry::EVertexLayout::P3T2 };
+
+    for (const Polygon &polygon : polygons) {
+        if (polygon.points.size() < 3)
+            continue;
+
+        const ExPolygon expolygon = expolygon_from_polygon(polygon);
+        const std::vector<Vec2f> triangles = triangulate_expolygon_2f(expolygon, NORMALS_UP);
+        if (triangles.empty() || triangles.size() % 3 != 0)
+            continue;
+
+        Vec2f min = triangles.front();
+        Vec2f max = min;
+        for (const Vec2f &v : triangles) {
+            min = min.cwiseMin(v).eval();
+            max = max.cwiseMax(v).eval();
+        }
+
+        const Vec2f size = max - min;
+        if (size.x() <= 0.0f || size.y() <= 0.0f)
+            continue;
+
+        Vec2f inv_size = size.cwiseInverse();
+        inv_size.y() *= -1.0f;
+
+        init_data.reserve_vertices(init_data.vertices_count() + triangles.size());
+        init_data.reserve_indices(init_data.indices_count() + triangles.size());
+        for (const Vec2f &v : triangles) {
+            init_data.add_vertex(Vec3f(v.x(), v.y(), z), (Vec2f)(v - min).cwiseProduct(inv_size).eval());
+            const unsigned int vertices_counter = (unsigned int)init_data.vertices_count();
+            if (vertices_counter % 3 == 0)
+                init_data.add_triangle(vertices_counter - 3, vertices_counter - 2, vertices_counter - 1);
+        }
+    }
+
+    if (!init_data.is_empty())
+        model.init_from(std::move(init_data));
+
+    return true;
+}
+
+static Lines clipped_diagonal_hatch_lines(const Polygons &clip_polygons, coord_t spacing)
+{
+    Lines result;
+    if (clip_polygons.empty())
+        return result;
+
+    BoundingBox bbox;
+    for (const Polygon &polygon : clip_polygons)
+        bbox.merge(polygon.points);
+    if (!bbox.defined)
+        return result;
+
+    spacing = std::max<coord_t>(spacing, scale_(1.0));
+    const coord_t margin = std::max(bbox.size().x(), bbox.size().y()) + spacing;
+    const coord_t x_min = bbox.min.x() - margin;
+    const coord_t x_max = bbox.max.x() + margin;
+    const coord_t c_min = bbox.min.y() - bbox.max.x() - margin;
+    const coord_t c_max = bbox.max.y() - bbox.min.x() + margin;
+
+    Lines subject;
+    for (coord_t c = c_min; c <= c_max; c += spacing)
+        subject.emplace_back(Point(x_min, x_min + c), Point(x_max, x_max + c));
+
+    return _clipper_ln(ClipperLib::ctIntersection, subject, clip_polygons);
+}
+
+static Polygons clipped_diagonal_hatch_ribbons(const Polygons &clip_polygons, coord_t spacing, coord_t width)
+{
+    const Lines center_lines = clipped_diagonal_hatch_lines(clip_polygons, spacing);
+    if (center_lines.empty())
+        return {};
+
+    Polylines polylines;
+    polylines.reserve(center_lines.size());
+    for (const Slic3r::Line &line : center_lines)
+        polylines.emplace_back(line.a, line.b);
+
+    Polygons ribbons = offset(polylines, float(std::max<coord_t>(width, scale_(0.5)) / 2), jtSquare, 0.0, ClipperLib::etOpenSquare);
+    return intersection(ribbons, clip_polygons);
+}
+
+struct ExclusionVolumePrismPreview
+{
+    Polygon footprint;
+    double  z_min { 0.0 };
+    double  z_max { 0.0 };
+};
+
+static bool init_exclusion_volume_prism_model(GLModel &model, const std::vector<ExclusionVolumePrismPreview> &prisms)
+{
+    model.reset();
+    if (prisms.empty())
+        return true;
+
+    GLModel::Geometry init_data;
+    init_data.format = { GLModel::Geometry::EPrimitiveType::Triangles, GLModel::Geometry::EVertexLayout::P3 };
+
+    for (const ExclusionVolumePrismPreview &prism : prisms) {
+        const Polygon &polygon = prism.footprint;
+        const float z_min = static_cast<float>(prism.z_min);
+        const float z_max = static_cast<float>(prism.z_max);
+        if (polygon.points.size() < 3 || z_max <= z_min)
+            continue;
+
+        init_data.reserve_vertices(init_data.vertices_count() + 4 * polygon.points.size());
+        init_data.reserve_indices(init_data.indices_count() + 6 * polygon.points.size());
+        for (size_t i = 0; i < polygon.points.size(); ++i) {
+            const Point &p0 = polygon.points[i];
+            const Point &p1 = polygon.points[(i + 1) % polygon.points.size()];
+
+            init_data.add_vertex(Vec3f(unscale<float>(p0.x()), unscale<float>(p0.y()), z_min));
+            init_data.add_vertex(Vec3f(unscale<float>(p1.x()), unscale<float>(p1.y()), z_min));
+            init_data.add_vertex(Vec3f(unscale<float>(p1.x()), unscale<float>(p1.y()), z_max));
+            init_data.add_vertex(Vec3f(unscale<float>(p0.x()), unscale<float>(p0.y()), z_max));
+
+            const unsigned int base = (unsigned int)init_data.vertices_count() - 4;
+            init_data.add_triangle(base, base + 1, base + 2);
+            init_data.add_triangle(base, base + 2, base + 3);
+        }
+
+        const ExPolygon expolygon = expolygon_from_polygon(polygon);
+        const std::vector<Vec2f> triangles = triangulate_expolygon_2f(expolygon, NORMALS_UP);
+        init_data.reserve_vertices(init_data.vertices_count() + triangles.size());
+        init_data.reserve_indices(init_data.indices_count() + triangles.size());
+        const unsigned int cap_base = (unsigned int)init_data.vertices_count();
+        for (const Vec2f &v : triangles)
+            init_data.add_vertex(Vec3f(v.x(), v.y(), z_max));
+        for (size_t i = 0; i + 2 < triangles.size(); i += 3)
+            init_data.add_triangle(cap_base + (unsigned int)i, cap_base + (unsigned int)i + 1, cap_base + (unsigned int)i + 2);
+    }
+
+    if (!init_data.is_empty())
+        model.init_from(std::move(init_data));
+
+    return true;
+}
+
 static void init_raycaster_from_model(PickingModel& model)
 {
     assert(model.mesh_raycaster == nullptr);
@@ -840,7 +994,6 @@ void PartPlate::render_exclude_area(bool force_default_color) {
 	if (force_default_color) //for thumbnail case
 		return;
 
-    // TODO: Render bed exclusion volumes as translucent vertical prisms.
 	ColorRGBA select_color{   .9f, .86f, .82f, .7f }; // ORCA
 	ColorRGBA unselect_color{ .6f, .6f, .6f, .3f }; // ORCA
 	//ColorRGBA default_color{ 0.9f, 0.9f, 0.9f, 1.0f };
@@ -858,6 +1011,144 @@ void PartPlate::render_exclude_area(bool force_default_color) {
 	m_exclude_triangles.set_color(m_selected ? select_color : unselect_color);
     m_exclude_triangles.render();
 	glsafe(::glDepthMask(GL_TRUE));
+}
+
+double PartPlate::max_broad_phase_intersecting_object_height(const Polygons& regions) const
+{
+    if (m_model == nullptr)
+        return 0.0;
+
+    double max_height = 0.0;
+
+    for (const std::pair<int, int> &object_instance : obj_to_instance_set) {
+        const int obj_id = object_instance.first;
+        const int instance_id = object_instance.second;
+        if (obj_id < 0 || obj_id >= int(m_model->objects.size()))
+            continue;
+
+        ModelObject *object = m_model->objects[obj_id];
+        if (instance_id < 0 || instance_id >= int(object->instances.size()))
+            continue;
+
+        ModelInstance *instance = object->instances[instance_id];
+        if (!instance->printable)
+            continue;
+
+        Polygon hull = instance->convex_hull_2d();
+        bool intersects_region = false;
+        for (const Polygon &region : regions) {
+            if (!intersection(Polygons{ region }, Polygons{ hull }).empty()) {
+                intersects_region = true;
+                break;
+            }
+        }
+
+        if (!intersects_region)
+            continue;
+
+        const BoundingBoxf3 instance_box = object->instance_convex_hull_bounding_box(instance_id);
+        max_height = std::max(max_height, instance_box.max.z());
+    }
+
+    return max_height;
+}
+
+void PartPlate::update_exclusion_volume_preview_models()
+{
+    m_exclusion_volume_floor_triangles.reset();
+    m_exclusion_volume_hatch_triangles.reset();
+    m_exclusion_volume_border_triangles.reset();
+    m_active_exclusion_volume_prisms.reset();
+
+    const DynamicPrintConfig *config = m_plater != nullptr ? m_plater->config() : nullptr;
+    if (config == nullptr)
+        return;
+
+    const Point plate_offset(scale_(m_origin.x()), scale_(m_origin.y()));
+    Polygons floor_regions;
+    Polygons hatch_regions;
+    Polygons border_regions;
+    const coord_t ribbon_width = scale_(1.6);
+    std::vector<BedExcludeRegion> regions = get_bed_excluded_regions(*config);
+    std::vector<std::pair<BedExcludeRegion, Polygon>> preview_regions;
+    Polygons preview_footprints;
+    std::vector<ExclusionVolumePrismPreview> active_prisms;
+
+    for (const BedExcludeRegion &region_src : regions) {
+        Polygon region = region_src.polygon;
+        region.translate(plate_offset);
+        region.make_counter_clockwise();
+        preview_regions.emplace_back(region_src, region);
+        preview_footprints.emplace_back(region);
+
+        if (region_src.from_3d_config) {
+            if (!region_src.has_z_range || region_src.z_min <= EPSILON) {
+                floor_regions.emplace_back(region);
+            } else {
+                Polygons inner = offset(Polygons{ region }, -scale_(1.0), jtMiter, 2.0);
+                if (inner.empty())
+                    inner = { region };
+
+                Polygons border = intersection(contour_to_polygons(inner, float(ribbon_width), jtMiter, 2.0), inner);
+                border_regions.insert(border_regions.end(), border.begin(), border.end());
+
+                Polygons hatch_ribbons = clipped_diagonal_hatch_ribbons(inner, scale_(6.0), ribbon_width);
+                hatch_regions.insert(hatch_regions.end(), hatch_ribbons.begin(), hatch_ribbons.end());
+            }
+        }
+    }
+
+    const double preview_height = max_broad_phase_intersecting_object_height(preview_footprints);
+    if (preview_height > EPSILON) {
+        for (const std::pair<BedExcludeRegion, Polygon> &preview_region : preview_regions) {
+            const BedExcludeRegion &region_src = preview_region.first;
+            const double z_min = region_src.has_z_range ? region_src.z_min : 0.0;
+            const double z_max = std::min(region_src.z_max, preview_height);
+            if (z_max > z_min + EPSILON)
+                active_prisms.push_back({ preview_region.second, z_min, z_max });
+        }
+    }
+
+    if (!floor_regions.empty() && !init_model_from_polygons(m_exclusion_volume_floor_triangles, floor_regions, GROUND_Z + 0.01f))
+        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ":Unable to create exclusion volume floor preview triangles\n";
+
+    if (!hatch_regions.empty() && !init_model_from_polygons(m_exclusion_volume_hatch_triangles, hatch_regions, GROUND_Z + 0.016f))
+        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ":Unable to create exclusion volume hatch preview ribbons\n";
+
+    if (!border_regions.empty() && !init_model_from_polygons(m_exclusion_volume_border_triangles, border_regions, GROUND_Z + 0.018f))
+        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ":Unable to create exclusion volume hatch preview border\n";
+
+    if (!active_prisms.empty() && !init_exclusion_volume_prism_model(m_active_exclusion_volume_prisms, active_prisms))
+        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ":Unable to create active exclusion volume preview prisms\n";
+}
+
+void PartPlate::render_exclusion_volume_previews(bool force_default_color)
+{
+    if (force_default_color)
+        return;
+
+    update_exclusion_volume_preview_models();
+
+    const ColorRGBA floor_color = m_selected ? ColorRGBA{ .86f, .86f, .86f, .70f } : ColorRGBA{ .60f, .60f, .60f, .30f };
+    const ColorRGBA ribbon_color{ .60f, .60f, .60f, .70f };
+    const ColorRGBA prism_color{ .52f, .52f, .52f, .38f };
+
+    glsafe(::glDepthMask(GL_FALSE));
+
+    m_exclusion_volume_floor_triangles.set_color(floor_color);
+    m_exclusion_volume_floor_triangles.render();
+
+    m_exclusion_volume_hatch_triangles.set_color(ribbon_color);
+    m_exclusion_volume_hatch_triangles.render();
+
+    m_exclusion_volume_border_triangles.set_color(ribbon_color);
+    m_exclusion_volume_border_triangles.render();
+
+    m_active_exclusion_volume_prisms.set_color(prism_color);
+    m_active_exclusion_volume_prisms.render();
+
+    glsafe(::glLineWidth(1.0f * m_scale_factor));
+    glsafe(::glDepthMask(GL_TRUE));
 }
 
 
@@ -2059,7 +2350,6 @@ bool PartPlate::check_outside(int obj_id, int instance_id, BoundingBoxf3* boundi
 	ModelInstance* instance = object->instances[instance_id];
 
 	BoundingBoxf3 instance_box = bounding_box? *bounding_box: object->instance_convex_hull_bounding_box(instance_id);
-	Polygon hull = instance->convex_hull_2d();
 	BoundingBoxf3 plate_box = get_plate_box();
 	if (instance_box.max.z() > plate_box.min.z())
 		plate_box.min.z() += instance_box.min.z(); // not considering outsize if sinking
@@ -2076,46 +2366,44 @@ bool PartPlate::check_outside(int obj_id, int instance_id, BoundingBoxf3* boundi
 	else
 	if (plate_box.contains(instance_box))
 	{
-		if (m_exclude_bounding_box.size() > 0)
-		{
-			Polygon hull = instance->convex_hull_2d();
-			int index;
-			for (index = 0; index < m_exclude_bounding_box.size(); index ++)
-			{
-				Polygon p = m_exclude_bounding_box[index].polygon(true);  // instance convex hull is scaled, so we need to scale here
-				if (intersection({ p }, { hull }).empty() == false)
-				//if (m_exclude_bounding_box[index].intersects(instance_box))
-				{
-					break;
-				}
-			}
-			if (index >= m_exclude_bounding_box.size())
-				outside = false;
-		}
-		else
-			outside = false;
-
+        outside = false;
         const DynamicPrintConfig *config = m_plater != nullptr ? m_plater->config() : nullptr;
-        if (!outside && config != nullptr) {
+        bool checked_config_regions = false;
+        if (config != nullptr) {
             const std::vector<BedExcludeRegion> regions = get_bed_excluded_regions(*config);
+            checked_config_regions = !regions.empty();
             const Point plate_offset(scale_(m_origin.x()), scale_(m_origin.y()));
             Polygon hull = instance->convex_hull_2d();
 
             for (const BedExcludeRegion &region_src : regions) {
-                if (!region_src.from_3d_config)
-                    continue;
-                if (instance_box.max.z() < region_src.z_min || instance_box.min.z() > region_src.z_max)
-                    continue;
-
                 Polygon region = region_src.polygon;
                 region.translate(plate_offset);
+                region.make_counter_clockwise();
 
-                // Keep the existing 2D hull intersection as a cheap broad phase.
+                // Broad 2D overlap is conclusive only for legacy full-height exclusion areas.
                 if (intersection(Polygons{ region }, Polygons{ hull }).empty())
+                    continue;
+                if (!region_src.has_z_range) {
+                    outside = true;
+                    break;
+                }
+
+                if (instance_box.max.z() < region_src.z_min || instance_box.min.z() > region_src.z_max)
                     continue;
 
                 const ExPolygons &footprint = instance->z_slab_projected_footprint_2d(region_src.z_min, region_src.z_max);
                 if (!footprint.empty() && !intersection(footprint, Polygons{ region }).empty()) {
+                    outside = true;
+                    break;
+                }
+            }
+        }
+
+        if (!checked_config_regions && m_exclude_bounding_box.size() > 0) {
+            Polygon hull = instance->convex_hull_2d();
+            for (const BoundingBoxf3 &exclude_box : m_exclude_bounding_box) {
+                Polygon p = exclude_box.polygon(true);  // instance convex hull is scaled, so we need to scale here
+                if (!intersection({ p }, { hull }).empty()) {
                     outside = true;
                     break;
                 }
@@ -2783,6 +3071,7 @@ void PartPlate::render(const Transform3d& view_matrix, const Transform3d& projec
             render_background(force_background_color);
 
             render_exclude_area(force_background_color);
+            render_exclusion_volume_previews(force_background_color);
         }
 
         if (show_grid)

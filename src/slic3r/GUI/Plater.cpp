@@ -13220,8 +13220,11 @@ void Plater::on_config_change(const DynamicPrintConfig &config)
         }
     }
 
-    if (bed_shape_changed)
+    if (bed_shape_changed) {
         set_bed_shape();
+        get_current_canvas3D()->requires_check_outside_state();
+        get_current_canvas3D()->request_extra_frame();
+    }
 
     config_change_notification(config, std::string("print_sequence"));
 

@@ -23,6 +23,7 @@
 #include <boost/property_tree/ptree_fwd.hpp>
 
 #include <cereal/access.hpp>
+#include <cereal/cereal.hpp>
 #include <cereal/types/base_class.hpp>
 
 namespace Slic3r {
@@ -1360,18 +1361,29 @@ private:
     std::string m_serialized_override;
 
     friend class cereal::access;
-    template<class Archive> void save(Archive& archive) const {
+    template<class Archive> void save(Archive& archive, const std::uint32_t /* version */) const {
         size_t cnt = this->values.size();
         archive(cnt);
         archive.saveBinary((const char*)this->values.data(), sizeof(Vec2d) * cnt);
+        archive(m_serialized_override);
     }
-    template<class Archive> void load(Archive& archive) {
+    template<class Archive> void load(Archive& archive, const std::uint32_t version) {
         size_t cnt;
         archive(cnt);
         this->values.assign(cnt, Vec2d());
         archive.loadBinary((char*)this->values.data(), sizeof(Vec2d) * cnt);
+        if (version >= 1)
+            archive(m_serialized_override);
+        else
+            m_serialized_override.clear();
     }
 };
+
+} // namespace Slic3r
+
+CEREAL_CLASS_VERSION(Slic3r::ConfigOptionPoints, 1);
+
+namespace Slic3r {
 
 class ConfigOptionPoint3 : public ConfigOptionSingle<Vec3d>
 {

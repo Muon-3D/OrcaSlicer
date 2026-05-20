@@ -128,6 +128,10 @@ private:
     std::vector<Vec3f> positions;
     PickingModel m_triangles;
     GLModel m_exclude_triangles;
+    GLModel m_exclusion_volume_floor_triangles;
+    GLModel m_exclusion_volume_hatch_triangles;
+    GLModel m_exclusion_volume_border_triangles;
+    GLModel m_active_exclusion_volume_prisms;
     GLModel m_logo_triangles;
     GLModel m_gridlines;
     GLModel m_gridlines_bolder;
@@ -179,6 +183,9 @@ private:
     void render_logo(bool bottom, bool render_cali = true);
     void render_logo_texture(GLTexture &logo_texture, GLModel &logo_buffer, bool bottom);
     void render_exclude_area(bool force_default_color);
+    void render_exclusion_volume_previews(bool force_default_color);
+    void update_exclusion_volume_preview_models();
+    double max_broad_phase_intersecting_object_height(const Polygons& regions) const;
     //void render_background_for_picking(const ColorRGBA render_color) const;
     void render_grid(bool bottom);
     void render_height_limit(PartPlate::HeightLimitMode mode = HEIGHT_LIMIT_BOTH);

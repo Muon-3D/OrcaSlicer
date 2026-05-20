@@ -1803,6 +1803,7 @@ struct BedExcludeRegion {
     double  z_min { 0.0 };
     double  z_max { 0.0 };
     bool    from_3d_config { false };
+    bool    has_z_range { false };
 };
 std::vector<BedExcludeRegion> get_bed_excluded_regions(const DynamicPrintConfig& cfg);
 std::vector<BedExcludeRegion> get_bed_excluded_regions(const PrintConfig& cfg);
