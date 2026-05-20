@@ -840,6 +840,7 @@ void PartPlate::render_exclude_area(bool force_default_color) {
 	if (force_default_color) //for thumbnail case
 		return;
 
+    // TODO: Render bed exclusion volumes as translucent vertical prisms.
 	ColorRGBA select_color{   .9f, .86f, .82f, .7f }; // ORCA
 	ColorRGBA unselect_color{ .6f, .6f, .6f, .3f }; // ORCA
 	//ColorRGBA default_color{ 0.9f, 0.9f, 0.9f, 1.0f };
@@ -2093,6 +2094,33 @@ bool PartPlate::check_outside(int obj_id, int instance_id, BoundingBoxf3* boundi
 		}
 		else
 			outside = false;
+
+        const DynamicPrintConfig *config = m_plater != nullptr ? m_plater->config() : nullptr;
+        if (!outside && config != nullptr) {
+            const std::vector<BedExcludeRegion> regions = get_bed_excluded_regions(*config);
+            const Point plate_offset(scale_(m_origin.x()), scale_(m_origin.y()));
+            Polygon hull = instance->convex_hull_2d();
+
+            for (const BedExcludeRegion &region_src : regions) {
+                if (!region_src.from_3d_config)
+                    continue;
+                if (instance_box.max.z() < region_src.z_min || instance_box.min.z() > region_src.z_max)
+                    continue;
+
+                Polygon region = region_src.polygon;
+                region.translate(plate_offset);
+
+                // Keep the existing 2D hull intersection as a cheap broad phase.
+                if (intersection(Polygons{ region }, Polygons{ hull }).empty())
+                    continue;
+
+                const ExPolygons &footprint = instance->z_slab_projected_footprint_2d(region_src.z_min, region_src.z_max);
+                if (!footprint.empty() && !intersection(footprint, Polygons{ region }).empty()) {
+                    outside = true;
+                    break;
+                }
+            }
+        }
 	}
 
 	return outside;

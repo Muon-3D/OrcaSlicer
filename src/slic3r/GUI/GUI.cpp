@@ -202,11 +202,23 @@ void change_opt_value(DynamicPrintConfig& config, const t_config_option_key& opt
 			config.set_key_value(opt_key, new ConfigOptionPoint(boost::any_cast<Vec2d>(value)));
 			}
 			break;
-		case coPoints:{
-			if (opt_key == "printable_area" || opt_key == "bed_exclude_area" || opt_key == "thumbnails") {
-				config.option<ConfigOptionPoints>(opt_key)->values = boost::any_cast<std::vector<Vec2d>>(value);
-				break;
-			}
+			case coPoints:{
+				if (opt_key == "bed_exclude_area" && boost::any_cast<std::string>(&value) != nullptr) {
+					config.option<ConfigOptionPoints>(opt_key)->deserialize(boost::any_cast<std::string>(value));
+					if (config.has("bed_exclude_area_3d"))
+						config.set_key_value("bed_exclude_area_3d", new ConfigOptionString());
+					break;
+				}
+				if (opt_key == "printable_area" || opt_key == "bed_exclude_area" || opt_key == "thumbnails") {
+					config.option<ConfigOptionPoints>(opt_key)->values = boost::any_cast<std::vector<Vec2d>>(value);
+					if (opt_key == "bed_exclude_area") {
+						ConfigOptionPoints normalized(boost::any_cast<std::vector<Vec2d>>(value));
+						config.option<ConfigOptionPoints>(opt_key)->deserialize(normalized.serialize());
+						if (config.has("bed_exclude_area_3d"))
+							config.set_key_value("bed_exclude_area_3d", new ConfigOptionString());
+					}
+					break;
+				}
 			ConfigOptionPoints* vec_new = new ConfigOptionPoints{ boost::any_cast<Vec2d>(value) };
 			config.option<ConfigOptionPoints>(opt_key)->set_at(vec_new, opt_index, 0);
 			}

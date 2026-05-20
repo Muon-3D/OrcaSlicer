@@ -16,6 +16,7 @@
 #include "FaceDetector.hpp"
 
 #include "libslic3r/Geometry/ConvexHull.hpp"
+#include "ClipperUtils.hpp"
 
 #include <float.h>
 
@@ -2895,7 +2896,7 @@ void Model::setPrintSpeedTable(const DynamicPrintConfig& config, const PrintConf
     //auto print_config = print.config();
     //printSpeedMap.bed_poly.points = get_bed_shape(*(wxGetApp().plater()->config()));
     printSpeedMap.bed_poly.points = get_bed_shape(config);
-    Pointfs excluse_area_points = print_config.bed_exclude_area.values;
+    Pointfs excluse_area_points = has_bed_exclusion_volume_syntax(print_config.bed_exclude_area) ? Pointfs{} : print_config.bed_exclude_area.values;
     Polygons exclude_polys;
     Polygon exclude_poly;
     for (int i = 0; i < excluse_area_points.size(); i++) {
@@ -2906,7 +2907,8 @@ void Model::setPrintSpeedTable(const DynamicPrintConfig& config, const PrintConf
             exclude_poly.points.clear();
         }
     }
-    printSpeedMap.bed_poly = diff({ printSpeedMap.bed_poly }, exclude_polys)[0];
+    if (!exclude_polys.empty())
+        printSpeedMap.bed_poly = diff({ printSpeedMap.bed_poly }, exclude_polys)[0];
 }
 
 // find temperature of heatend and bed and matierial of an given extruder
@@ -3203,10 +3205,88 @@ Polygon ModelInstance::convex_hull_2d()
     return convex_hull;
 }
 
+const ExPolygons& ModelInstance::z_slab_projected_footprint_2d(double z_min, double z_max) const
+{
+    if (z_min > z_max)
+        std::swap(z_min, z_max);
+
+    const Transform3d instance_matrix = get_matrix();
+    Transform3d cache_matrix = instance_matrix;
+    cache_matrix.translation().x() = 0.0;
+    cache_matrix.translation().y() = 0.0;
+    const double xy_offset_x = instance_matrix.translation().x();
+    const double xy_offset_y = instance_matrix.translation().y();
+
+    for (ZSlabFootprintCache &entry : z_slab_footprint_cache) {
+        if (std::abs(entry.z_min - z_min) < EPSILON &&
+            std::abs(entry.z_max - z_max) < EPSILON &&
+            entry.transform.matrix().isApprox(cache_matrix.matrix())) {
+            const Point delta(scale_(xy_offset_x - entry.xy_offset_x), scale_(xy_offset_y - entry.xy_offset_y));
+            if (delta != Point::Zero()) {
+                translate(entry.footprint, delta);
+                entry.xy_offset_x = xy_offset_x;
+                entry.xy_offset_y = xy_offset_y;
+            }
+            return entry.footprint;
+        }
+    }
+
+    ZSlabFootprintCache cache;
+    cache.z_min = z_min;
+    cache.z_max = z_max;
+    cache.xy_offset_x = xy_offset_x;
+    cache.xy_offset_y = xy_offset_y;
+    cache.transform = cache_matrix;
+
+    Polygons projected_triangles;
+    const ModelObject *model_object = get_object();
+    for (const ModelVolume *volume : model_object->volumes) {
+        if (! volume->is_model_part())
+            continue;
+
+        const indexed_triangle_set &its = volume->mesh().its;
+        if (its.vertices.empty() || its.indices.empty())
+            continue;
+
+        const Transform3d volume_matrix = instance_matrix * volume->get_matrix();
+        projected_triangles.reserve(projected_triangles.size() + its.indices.size());
+
+        for (const stl_triangle_vertex_indices &face : its.indices) {
+            const Vec3d p0 = volume_matrix * its.vertices[face[0]].cast<double>();
+            const Vec3d p1 = volume_matrix * its.vertices[face[1]].cast<double>();
+            const Vec3d p2 = volume_matrix * its.vertices[face[2]].cast<double>();
+
+            const double tri_min_z = std::min({ p0.z(), p1.z(), p2.z() });
+            const double tri_max_z = std::max({ p0.z(), p1.z(), p2.z() });
+            if (tri_max_z < z_min || tri_min_z > z_max)
+                continue;
+
+            Polygon triangle;
+            triangle.points.emplace_back(scale_(p0.x()), scale_(p0.y()));
+            triangle.points.emplace_back(scale_(p1.x()), scale_(p1.y()));
+            triangle.points.emplace_back(scale_(p2.x()), scale_(p2.y()));
+            if (std::abs(triangle.area()) <= SCALED_EPSILON)
+                continue;
+
+            triangle.make_counter_clockwise();
+            projected_triangles.emplace_back(std::move(triangle));
+        }
+    }
+
+    if (! projected_triangles.empty())
+        cache.footprint = union_ex(projected_triangles);
+
+    if (z_slab_footprint_cache.size() >= 32)
+        z_slab_footprint_cache.erase(z_slab_footprint_cache.begin());
+    z_slab_footprint_cache.emplace_back(std::move(cache));
+    return z_slab_footprint_cache.back().footprint;
+}
+
 //BBS: invalidate instance's convex_hull_2d
 void ModelInstance::invalidate_convex_hull_2d()
 {
     convex_hull.clear();
+    z_slab_footprint_cache.clear();
 }
 
 //BBS adhesion coefficients from model object class

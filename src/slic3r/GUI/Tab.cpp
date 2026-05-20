@@ -918,7 +918,7 @@ void TabPrinter::init_options_list()
 
     for (const std::string& opt_key : m_config->keys())
     {
-        if (opt_key == "printable_area" || opt_key == "bed_exclude_area" || opt_key == "thumbnails") {
+        if (opt_key == "printable_area" || opt_key == "bed_exclude_area" || opt_key == "bed_exclude_area_3d" || opt_key == "thumbnails") {
             m_options_list.emplace(opt_key, m_opt_status_value);
             continue;
         }
@@ -3874,10 +3874,10 @@ void TabPrinter::build_fff()
         create_line_with_widget(optgroup.get(), "printable_area", "custom-svg-and-png-bed-textures_124612", [this](wxWindow* parent) {
            return 	create_bed_shape_widget(parent);
         });
-        Option option = optgroup->get_option("bed_exclude_area");
-        option.opt.full_width = true;
-        optgroup->append_single_option_line(option);
-        // optgroup->append_single_option_line("printable_area");
+	        Option option = optgroup->get_option("bed_exclude_area");
+	        option.opt.full_width = true;
+	        optgroup->append_single_option_line(option);
+	        // optgroup->append_single_option_line("printable_area");
         optgroup->append_single_option_line("printable_height");
         optgroup->append_single_option_line("support_multi_bed_types","bed-types");
         optgroup->append_single_option_line("nozzle_volume");

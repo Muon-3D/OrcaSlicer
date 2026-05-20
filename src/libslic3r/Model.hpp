@@ -1335,6 +1335,7 @@ public:
     double get_auto_brim_width() const;
     // BBS
     Polygon convex_hull_2d();
+    const ExPolygons& z_slab_projected_footprint_2d(double z_min, double z_max) const;
     void invalidate_convex_hull_2d();
 
     // Getting the input polygon for arrange
@@ -1372,6 +1373,15 @@ private:
     // Parent object, owning this instance.
     ModelObject* object;
     Polygon convex_hull; // BBS
+    struct ZSlabFootprintCache {
+        double z_min { 0.0 };
+        double z_max { 0.0 };
+        double xy_offset_x { 0.0 };
+        double xy_offset_y { 0.0 };
+        Transform3d transform { Transform3d::Identity() };
+        ExPolygons footprint;
+    };
+    mutable std::vector<ZSlabFootprintCache> z_slab_footprint_cache;
 
     // Constructor, which assigns a new unique ID.
     explicit ModelInstance(ModelObject* object) : print_volume_state(ModelInstancePVS_Inside), printable(true), object(object), m_assemble_initialized(false) { assert(this->id().valid()); }
