@@ -60,6 +60,43 @@ template class PrintState<PrintObjectStep, posCount>;
 PrintRegion::PrintRegion(const PrintRegionConfig &config) : PrintRegion(config, config.hash()) {}
 PrintRegion::PrintRegion(PrintRegionConfig &&config) : PrintRegion(std::move(config), config.hash()) {}
 
+static std::vector<BedExcludeRegion> translated_bed_exclusion_volumes(const Print &print)
+{
+    std::vector<BedExcludeRegion> regions = get_bed_excluded_regions(print.config());
+    const Point print_origin(scale_(print.get_plate_origin().x()), scale_(print.get_plate_origin().y()));
+
+    for (BedExcludeRegion &region : regions)
+        region.polygon.translate(print_origin);
+
+    return regions;
+}
+
+static bool intersects_bed_exclusion_volume(const ModelInstance &instance, const std::vector<BedExcludeRegion> &regions)
+{
+    if (regions.empty())
+        return false;
+
+    Polygon hull = const_cast<ModelInstance&>(instance).convex_hull_2d();
+    for (const BedExcludeRegion &region : regions) {
+        if (intersection(Polygons{ region.polygon }, Polygons{ hull }).empty())
+            continue;
+
+        if (instance.intersects_bed_exclude_region(region))
+            return true;
+    }
+
+    return false;
+}
+
+static Polygons full_height_bed_exclusion_polygons(const std::vector<BedExcludeRegion> &regions)
+{
+    Polygons out;
+    for (const BedExcludeRegion &region : regions)
+        if (! region.has_z_range)
+            out.emplace_back(region.polygon);
+    return out;
+}
+
 //BBS
 // ORCA: Now this is a parameter
 //float Print::min_skirt_length = 0;
@@ -112,6 +149,7 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         "printable_area",
         //BBS: add bed_exclude_area
         "bed_exclude_area",
+        "bed_exclude_area_3d",
         "thumbnail_size",
         "before_layer_change_gcode",
         "enable_pressure_advance",
@@ -642,10 +680,8 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
 {
     StringObjectException single_object_exception;
     const auto& print_config = print.config();
-    Polygons exclude_polys = get_bed_excluded_area(print_config);
     const Vec3d print_origin = print.get_plate_origin();
-    std::for_each(exclude_polys.begin(), exclude_polys.end(),
-                  [&print_origin](Polygon& p) { p.translate(scale_(print_origin.x()), scale_(print_origin.y())); });
+    const std::vector<BedExcludeRegion> exclusion_volumes = translated_bed_exclusion_volumes(print);
 
     struct print_instance_info
     {
@@ -696,22 +732,17 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
                     // Convert the shift from the PrintObject's coordinates into ModelObject's coordinates by removing the centering offset.
                     convex_hull.translate(instance.shift - print_object->center_offset());
                 }
-                convex_hull_no_offset.translate(instance.shift - print_object->center_offset());
-                //juedge the exclude area
-                if (!intersection(exclude_polys, convex_hull_no_offset).empty()) {
+                if (intersects_bed_exclusion_volume(*instance.model_instance, exclusion_volumes)) {
                     if (single_object_exception.string.empty()) {
-                        single_object_exception.string = (boost::format(L("%1% is too close to exclusion area. There may be collisions when printing.")) %instance.model_instance->get_object()->name).str();
+                        single_object_exception.string = (boost::format(L("%1% is too close to exclusion volume, there may be collisions when printing.")) %instance.model_instance->get_object()->name).str();
                         // single_object_exception.object = instance.model_instance->get_object();
                         //ORCA: Pass ModelInstance instead of ModelObject
                         single_object_exception.object = instance.model_instance;
                     }
                     else {
-                        single_object_exception.string += "\n"+(boost::format(L("%1% is too close to exclusion area. There may be collisions when printing.")) %instance.model_instance->get_object()->name).str();
+                        single_object_exception.string += "\n" + (boost::format(L("%1% is too close to exclusion volume, there may be collisions when printing.")) % instance.model_instance->get_object()->name).str();
                         single_object_exception.object = nullptr;
                     }
-                    //if (polygons) {
-                    //    intersecting_idxs.emplace_back(convex_hulls_other.size());
-                    //}
                 }
 
                 // if output needed, collect indices (inside convex_hulls_other) of intersecting hulls
@@ -964,10 +995,9 @@ static StringObjectException layered_print_cleareance_valid(const Print &print, 
         return {};
 
     const auto& print_config = print.config();
-    Polygons exclude_polys = get_bed_excluded_area(print_config);
     const Vec3d print_origin = print.get_plate_origin();
-    std::for_each(exclude_polys.begin(), exclude_polys.end(),
-                  [&print_origin](Polygon& p) { p.translate(scale_(print_origin.x()), scale_(print_origin.y())); });
+    const std::vector<BedExcludeRegion> exclusion_volumes = translated_bed_exclusion_volumes(print);
+    const Polygons prime_tower_exclude_polys = full_height_bed_exclusion_polygons(exclusion_volumes);
 
     Pointfs wrapping_detection_area = print_config.wrapping_exclude_area.values;
     Polygon wrapping_poly;
@@ -987,14 +1017,6 @@ static StringObjectException layered_print_cleareance_valid(const Print &print, 
                                                                                   inst->model_instance->get_scaling_factor(), inst->model_instance->get_mirror()));
             volume_hull.translate(inst->shift - inst->print_object->center_offset());
 
-            if (!intersection(exclude_polys, volume_hull).empty()) {
-                // return {inst->model_instance->get_object()->name + L(" is too close to exclusion area, there may be collisions when printing.") + "\n",
-                //        inst->model_instance->get_object()};
-                //ORCA: Pass ModelInstance instead of ModelObject
-                return {inst->model_instance->get_object()->name + L(" is too close to exclusion area, there may be collisions when printing.") + "\n",
-                        inst->model_instance};
-            }
-
             if (print_config.enable_wrapping_detection.value && !intersection(wrapping_poly, volume_hull).empty()) {
                 // return {inst->model_instance->get_object()->name + L(" is too close to clumping detection area, there may be collisions when printing.") + "\n",
                 //        inst->model_instance->get_object()};
@@ -1004,6 +1026,8 @@ static StringObjectException layered_print_cleareance_valid(const Print &print, 
             }
             current_instance_hulls.emplace_back(volume_hull);
         }
+        if (intersects_bed_exclusion_volume(*inst->model_instance, exclusion_volumes))
+            return {inst->model_instance->get_object()->name + L(" is too close to exclusion volume, there may be collisions when printing.") + "\n", inst->model_instance};
 
         if (!intersection(convex_hulls_other, current_instance_hulls).empty()) {
             if (warning) {
@@ -1066,7 +1090,7 @@ static StringObjectException layered_print_cleareance_valid(const Print &print, 
             warning->string += L("Prime Tower") + L(" is too close to others, and collisions may be caused.\n");
         }
     }
-    if (!intersection(exclude_polys, convex_hulls_temp).empty()) {
+    if (!intersection(prime_tower_exclude_polys, convex_hulls_temp).empty()) {
         /*if (warning) {
             warning->string += L("Prime Tower is too close to exclusion area, there may be collisions when printing.\n");
         }*/
