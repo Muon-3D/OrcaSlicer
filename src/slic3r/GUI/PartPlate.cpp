@@ -459,6 +459,36 @@ static ExPolygon expolygon_from_polygon(const Polygon &polygon)
     return expolygon;
 }
 
+static void append_expolygon_triangles(GLModel::Geometry &init_data, const ExPolygon &expolygon, float z)
+{
+    const std::vector<Vec2f> triangles = triangulate_expolygon_2f(expolygon, NORMALS_UP);
+    if (triangles.empty() || triangles.size() % 3 != 0)
+        return;
+
+    Vec2f min = triangles.front();
+    Vec2f max = min;
+    for (const Vec2f &v : triangles) {
+        min = min.cwiseMin(v).eval();
+        max = max.cwiseMax(v).eval();
+    }
+
+    const Vec2f size = max - min;
+    if (size.x() <= 0.0f || size.y() <= 0.0f)
+        return;
+
+    Vec2f inv_size = size.cwiseInverse();
+    inv_size.y() *= -1.0f;
+
+    init_data.reserve_vertices(init_data.vertices_count() + triangles.size());
+    init_data.reserve_indices(init_data.indices_count() + triangles.size());
+    for (const Vec2f &v : triangles) {
+        init_data.add_vertex(Vec3f(v.x(), v.y(), z), (Vec2f)(v - min).cwiseProduct(inv_size).eval());
+        const unsigned int vertices_counter = (unsigned int)init_data.vertices_count();
+        if (vertices_counter % 3 == 0)
+            init_data.add_triangle(vertices_counter - 3, vertices_counter - 2, vertices_counter - 1);
+    }
+}
+
 static bool init_model_from_polygons(GLModel &model, const Polygons &polygons, float z)
 {
     model.reset();
@@ -472,33 +502,29 @@ static bool init_model_from_polygons(GLModel &model, const Polygons &polygons, f
         if (polygon.points.size() < 3)
             continue;
 
-        const ExPolygon expolygon = expolygon_from_polygon(polygon);
-        const std::vector<Vec2f> triangles = triangulate_expolygon_2f(expolygon, NORMALS_UP);
-        if (triangles.empty() || triangles.size() % 3 != 0)
+        append_expolygon_triangles(init_data, expolygon_from_polygon(polygon), z);
+    }
+
+    if (!init_data.is_empty())
+        model.init_from(std::move(init_data));
+
+    return true;
+}
+
+static bool init_model_from_expolygons(GLModel &model, const ExPolygons &expolygons, float z)
+{
+    model.reset();
+    if (expolygons.empty())
+        return true;
+
+    GLModel::Geometry init_data;
+    init_data.format = { GLModel::Geometry::EPrimitiveType::Triangles, GLModel::Geometry::EVertexLayout::P3T2 };
+
+    for (const ExPolygon &expolygon : expolygons) {
+        if (expolygon.contour.points.size() < 3)
             continue;
 
-        Vec2f min = triangles.front();
-        Vec2f max = min;
-        for (const Vec2f &v : triangles) {
-            min = min.cwiseMin(v).eval();
-            max = max.cwiseMax(v).eval();
-        }
-
-        const Vec2f size = max - min;
-        if (size.x() <= 0.0f || size.y() <= 0.0f)
-            continue;
-
-        Vec2f inv_size = size.cwiseInverse();
-        inv_size.y() *= -1.0f;
-
-        init_data.reserve_vertices(init_data.vertices_count() + triangles.size());
-        init_data.reserve_indices(init_data.indices_count() + triangles.size());
-        for (const Vec2f &v : triangles) {
-            init_data.add_vertex(Vec3f(v.x(), v.y(), z), (Vec2f)(v - min).cwiseProduct(inv_size).eval());
-            const unsigned int vertices_counter = (unsigned int)init_data.vertices_count();
-            if (vertices_counter % 3 == 0)
-                init_data.add_triangle(vertices_counter - 3, vertices_counter - 2, vertices_counter - 1);
-        }
+        append_expolygon_triangles(init_data, expolygon, z);
     }
 
     if (!init_data.is_empty())
@@ -1095,7 +1121,7 @@ void PartPlate::update_exclusion_volume_preview_models()
 
     const Point plate_offset(scale_(m_origin.x()), scale_(m_origin.y()));
     Polygons floor_regions;
-    Polygons border_regions;
+    ExPolygons border_regions;
     const coord_t ribbon_width = scale_(1.6);
     std::vector<std::pair<BedExcludeRegion, Polygon>> preview_regions;
     Polygons preview_footprints;
@@ -1114,7 +1140,8 @@ void PartPlate::update_exclusion_volume_preview_models()
             if (!region_src.has_z_range || region_src.z_min <= EPSILON) {
                 floor_regions.emplace_back(region);
             } else {
-                Polygons border = intersection(contour_to_polygons(region, float(ribbon_width), jtMiter, 2.0), Polygons{ region });
+                const Polygons inner = offset(Polygons{ region }, -ribbon_width, jtMiter, 2.0);
+                ExPolygons border = inner.empty() ? ExPolygons{ expolygon_from_polygon(region) } : diff_ex(Polygons{ region }, inner);
                 border_regions.insert(border_regions.end(), border.begin(), border.end());
             }
         }
@@ -1166,7 +1193,7 @@ void PartPlate::update_exclusion_volume_preview_models()
     if (!floor_regions.empty() && !init_model_from_polygons(m_exclusion_volume_floor_triangles, floor_regions, GROUND_Z + 0.01f))
         BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ":Unable to create exclusion volume floor preview triangles\n";
 
-    if (!border_regions.empty() && !init_model_from_polygons(m_exclusion_volume_border_triangles, border_regions, GROUND_Z + 0.018f))
+    if (!border_regions.empty() && !init_model_from_expolygons(m_exclusion_volume_border_triangles, border_regions, GROUND_Z + 0.018f))
         BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ":Unable to create exclusion volume preview border\n";
 
     if (!active_prisms.empty() && !init_exclusion_volume_prism_model(m_active_exclusion_volume_prisms, active_prisms))
