@@ -9,6 +9,7 @@
 #include "MTUtils.hpp"
 #include "TriangleMeshSlicer.hpp"
 #include "TriangleSelector.hpp"
+#include "Tesselate.hpp"
 
 #include "Format/AMF.hpp"
 #include "Format/svg.hpp"
@@ -28,6 +29,7 @@
 
 #include "SVG.hpp"
 #include <Eigen/Dense>
+#include <array>
 #include <functional>
 #include "GCodeWriter.hpp"
 
@@ -3205,83 +3207,194 @@ Polygon ModelInstance::convex_hull_2d()
     return convex_hull;
 }
 
-const ExPolygons& ModelInstance::z_slab_projected_footprint_2d(double z_min, double z_max) const
+namespace {
+
+struct ExclusionPrismFootprintTriangle
 {
-    if (z_min > z_max)
-        std::swap(z_min, z_max);
+    std::array<Vec2d, 3> vertices;
+    Vec2d min = Vec2d::Zero();
+    Vec2d max = Vec2d::Zero();
+};
 
-    const Transform3d instance_matrix = get_matrix();
-    Transform3d cache_matrix = instance_matrix;
-    cache_matrix.translation().x() = 0.0;
-    cache_matrix.translation().y() = 0.0;
-    const double xy_offset_x = instance_matrix.translation().x();
-    const double xy_offset_y = instance_matrix.translation().y();
+static double cross_2d(const Vec2d &a, const Vec2d &b)
+{
+    return a.x() * b.y() - a.y() * b.x();
+}
 
-    for (ZSlabFootprintCache &entry : z_slab_footprint_cache) {
-        if (std::abs(entry.z_min - z_min) < EPSILON &&
-            std::abs(entry.z_max - z_max) < EPSILON &&
-            entry.transform.matrix().isApprox(cache_matrix.matrix())) {
-            const Point delta(scale_(xy_offset_x - entry.xy_offset_x), scale_(xy_offset_y - entry.xy_offset_y));
-            if (delta != Point::Zero()) {
-                translate(entry.footprint, delta);
-                entry.xy_offset_x = xy_offset_x;
-                entry.xy_offset_y = xy_offset_y;
+template<class DistanceFn>
+static std::vector<Vec3d> clip_polygon_by_signed_distance(const std::vector<Vec3d> &input, DistanceFn distance)
+{
+    constexpr double clip_epsilon = 1e-8;
+    constexpr double duplicate_epsilon_sq = 1e-16;
+
+    std::vector<Vec3d> output;
+    if (input.empty())
+        return output;
+
+    auto append_point = [&output, duplicate_epsilon_sq](const Vec3d &point) {
+        if (output.empty() || (output.back() - point).squaredNorm() > duplicate_epsilon_sq)
+            output.emplace_back(point);
+    };
+
+    Vec3d prev = input.back();
+    double prev_distance = distance(prev);
+    bool prev_inside = prev_distance >= -clip_epsilon;
+    for (const Vec3d &curr : input) {
+        const double curr_distance = distance(curr);
+        const bool curr_inside = curr_distance >= -clip_epsilon;
+
+        if (curr_inside != prev_inside) {
+            const double denom = prev_distance - curr_distance;
+            if (std::abs(denom) > clip_epsilon) {
+                const double t = prev_distance / denom;
+                append_point(prev + t * (curr - prev));
             }
-            return entry.footprint;
+        }
+        if (curr_inside)
+            append_point(curr);
+
+        prev = curr;
+        prev_distance = curr_distance;
+        prev_inside = curr_inside;
+    }
+
+    if (output.size() > 1 && (output.front() - output.back()).squaredNorm() <= duplicate_epsilon_sq)
+        output.pop_back();
+
+    return output;
+}
+
+static std::vector<ExclusionPrismFootprintTriangle> triangulated_prism_footprints(const Polygon &polygon)
+{
+    std::vector<ExclusionPrismFootprintTriangle> out;
+    if (polygon.points.size() < 3)
+        return out;
+
+    ExPolygon expolygon;
+    expolygon.contour = polygon;
+    expolygon.contour.make_counter_clockwise();
+
+    std::vector<Vec2d> triangles = triangulate_expolygon_2d(expolygon, NORMALS_UP);
+    if (triangles.empty()) {
+        triangles.reserve((polygon.points.size() - 2) * 3);
+        const Vec2d first(unscale<double>(polygon.points.front().x()), unscale<double>(polygon.points.front().y()));
+        for (size_t i = 1; i + 1 < polygon.points.size(); ++i) {
+            triangles.emplace_back(first);
+            triangles.emplace_back(unscale<double>(polygon.points[i].x()), unscale<double>(polygon.points[i].y()));
+            triangles.emplace_back(unscale<double>(polygon.points[i + 1].x()), unscale<double>(polygon.points[i + 1].y()));
         }
     }
 
-    ZSlabFootprintCache cache;
-    cache.z_min = z_min;
-    cache.z_max = z_max;
-    cache.xy_offset_x = xy_offset_x;
-    cache.xy_offset_y = xy_offset_y;
-    cache.transform = cache_matrix;
+    out.reserve(triangles.size() / 3);
+    for (size_t i = 0; i + 2 < triangles.size(); i += 3) {
+        ExclusionPrismFootprintTriangle tri;
+        tri.vertices = { triangles[i], triangles[i + 1], triangles[i + 2] };
 
-    Polygons projected_triangles;
+        const double area = cross_2d(tri.vertices[1] - tri.vertices[0], tri.vertices[2] - tri.vertices[0]);
+        if (std::abs(area) <= EPSILON)
+            continue;
+        if (area < 0.0)
+            std::swap(tri.vertices[1], tri.vertices[2]);
+
+        tri.min = tri.vertices[0].cwiseMin(tri.vertices[1]).cwiseMin(tri.vertices[2]);
+        tri.max = tri.vertices[0].cwiseMax(tri.vertices[1]).cwiseMax(tri.vertices[2]);
+        out.emplace_back(std::move(tri));
+    }
+
+    return out;
+}
+
+static bool triangle_bbox_intersects_prism_footprint(const Vec3d &p0, const Vec3d &p1, const Vec3d &p2, const ExclusionPrismFootprintTriangle &footprint)
+{
+    constexpr double bbox_epsilon = 1e-8;
+    const double tri_min_x = std::min({ p0.x(), p1.x(), p2.x() });
+    const double tri_max_x = std::max({ p0.x(), p1.x(), p2.x() });
+    const double tri_min_y = std::min({ p0.y(), p1.y(), p2.y() });
+    const double tri_max_y = std::max({ p0.y(), p1.y(), p2.y() });
+
+    return tri_max_x >= footprint.min.x() - bbox_epsilon &&
+           tri_min_x <= footprint.max.x() + bbox_epsilon &&
+           tri_max_y >= footprint.min.y() - bbox_epsilon &&
+           tri_min_y <= footprint.max.y() + bbox_epsilon;
+}
+
+static std::vector<Vec3d> clip_model_triangle_to_prism(
+    const Vec3d &p0,
+    const Vec3d &p1,
+    const Vec3d &p2,
+    const double z_min,
+    const double z_max,
+    const ExclusionPrismFootprintTriangle &footprint)
+{
+    std::vector<Vec3d> clipped = { p0, p1, p2 };
+    clipped = clip_polygon_by_signed_distance(clipped, [z_min](const Vec3d &p) { return p.z() - z_min; });
+    clipped = clip_polygon_by_signed_distance(clipped, [z_max](const Vec3d &p) { return z_max - p.z(); });
+
+    for (size_t i = 0; i < footprint.vertices.size() && clipped.size() >= 3; ++i) {
+        const Vec2d &a = footprint.vertices[i];
+        const Vec2d &b = footprint.vertices[(i + 1) % footprint.vertices.size()];
+        const Vec2d edge = b - a;
+        clipped = clip_polygon_by_signed_distance(clipped, [a, edge](const Vec3d &p) {
+            return cross_2d(edge, Vec2d(p.x() - a.x(), p.y() - a.y()));
+        });
+    }
+
+    return clipped;
+}
+
+static double polygon_3d_area2(const std::vector<Vec3d> &polygon)
+{
+    if (polygon.size() < 3)
+        return 0.0;
+
+    Vec3d normal = Vec3d::Zero();
+    for (size_t i = 1; i + 1 < polygon.size(); ++i)
+        normal += (polygon[i] - polygon.front()).cross(polygon[i + 1] - polygon.front());
+    return normal.norm();
+}
+
+static void append_clipped_polygon(indexed_triangle_set &out, const std::vector<Vec3d> &polygon)
+{
+    if (polygon.size() < 3)
+        return;
+
+    const int base = int(out.vertices.size());
+    out.vertices.reserve(out.vertices.size() + polygon.size());
+    for (const Vec3d &point : polygon)
+        out.vertices.emplace_back(point.cast<float>());
+
+    out.indices.reserve(out.indices.size() + polygon.size() - 2);
+    for (size_t i = 1; i + 1 < polygon.size(); ++i) {
+        stl_triangle_vertex_indices tri;
+        tri << base, base + int(i), base + int(i + 1);
+        out.indices.emplace_back(tri);
+    }
+}
+
+} // namespace
+
+bool ModelInstance::intersects_bed_exclude_region(const BedExcludeRegion &region, indexed_triangle_set *intersection_mesh) const
+{
+    if (intersection_mesh != nullptr)
+        intersection_mesh->clear();
+
+    if (region.polygon.points.size() < 3)
+        return false;
+
+    double z_min = region.z_min;
+    double z_max = region.z_max;
+    if (z_min > z_max)
+        std::swap(z_min, z_max);
+    if (z_max <= z_min + EPSILON)
+        return false;
+
+    const std::vector<ExclusionPrismFootprintTriangle> footprints = triangulated_prism_footprints(region.polygon);
+    if (footprints.empty())
+        return false;
+
+    bool intersects = false;
     const ModelObject *model_object = get_object();
-    auto clip_polygon_min_z = [](const std::vector<Vec3d> &input, double z_min) {
-        std::vector<Vec3d> output;
-        if (input.empty())
-            return output;
-
-        auto inside = [z_min](const Vec3d &p) { return p.z() >= z_min; };
-        Vec3d prev = input.back();
-        bool prev_inside = inside(prev);
-        for (const Vec3d &curr : input) {
-            const bool curr_inside = inside(curr);
-            if (curr_inside != prev_inside) {
-                const double t = (z_min - prev.z()) / (curr.z() - prev.z());
-                output.emplace_back(prev + t * (curr - prev));
-            }
-            if (curr_inside)
-                output.emplace_back(curr);
-            prev = curr;
-            prev_inside = curr_inside;
-        }
-        return output;
-    };
-    auto clip_polygon_max_z = [](const std::vector<Vec3d> &input, double z_max) {
-        std::vector<Vec3d> output;
-        if (input.empty())
-            return output;
-
-        auto inside = [z_max](const Vec3d &p) { return p.z() <= z_max; };
-        Vec3d prev = input.back();
-        bool prev_inside = inside(prev);
-        for (const Vec3d &curr : input) {
-            const bool curr_inside = inside(curr);
-            if (curr_inside != prev_inside) {
-                const double t = (z_max - prev.z()) / (curr.z() - prev.z());
-                output.emplace_back(prev + t * (curr - prev));
-            }
-            if (curr_inside)
-                output.emplace_back(curr);
-            prev = curr;
-            prev_inside = curr_inside;
-        }
-        return output;
-    };
+    const Transform3d instance_matrix = get_matrix();
 
     for (const ModelVolume *volume : model_object->volumes) {
         if (! volume->is_model_part())
@@ -3292,8 +3405,6 @@ const ExPolygons& ModelInstance::z_slab_projected_footprint_2d(double z_min, dou
             continue;
 
         const Transform3d volume_matrix = instance_matrix * volume->get_matrix();
-        projected_triangles.reserve(projected_triangles.size() + its.indices.size());
-
         for (const stl_triangle_vertex_indices &face : its.indices) {
             const Vec3d p0 = volume_matrix * its.vertices[face[0]].cast<double>();
             const Vec3d p1 = volume_matrix * its.vertices[face[1]].cast<double>();
@@ -3304,36 +3415,30 @@ const ExPolygons& ModelInstance::z_slab_projected_footprint_2d(double z_min, dou
             if (tri_max_z < z_min || tri_min_z > z_max)
                 continue;
 
-            std::vector<Vec3d> clipped = clip_polygon_max_z(clip_polygon_min_z({ p0, p1, p2 }, z_min), z_max);
-            if (clipped.size() < 3)
-                continue;
+            for (const ExclusionPrismFootprintTriangle &footprint : footprints) {
+                if (! triangle_bbox_intersects_prism_footprint(p0, p1, p2, footprint))
+                    continue;
 
-            Polygon projected;
-            projected.points.reserve(clipped.size());
-            for (const Vec3d &p : clipped)
-                projected.points.emplace_back(scale_(p.x()), scale_(p.y()));
-            if (std::abs(projected.area()) <= SCALED_EPSILON)
-                continue;
+                std::vector<Vec3d> clipped = clip_model_triangle_to_prism(p0, p1, p2, z_min, z_max, footprint);
+                if (polygon_3d_area2(clipped) <= 1e-8)
+                    continue;
 
-            projected.make_counter_clockwise();
-            projected_triangles.emplace_back(std::move(projected));
+                intersects = true;
+                if (intersection_mesh == nullptr)
+                    return true;
+
+                append_clipped_polygon(*intersection_mesh, clipped);
+            }
         }
     }
 
-    if (! projected_triangles.empty())
-        cache.footprint = union_ex(projected_triangles);
-
-    if (z_slab_footprint_cache.size() >= 32)
-        z_slab_footprint_cache.erase(z_slab_footprint_cache.begin());
-    z_slab_footprint_cache.emplace_back(std::move(cache));
-    return z_slab_footprint_cache.back().footprint;
+    return intersects;
 }
 
 //BBS: invalidate instance's convex_hull_2d
 void ModelInstance::invalidate_convex_hull_2d()
 {
     convex_hull.clear();
-    z_slab_footprint_cache.clear();
 }
 
 //BBS adhesion coefficients from model object class

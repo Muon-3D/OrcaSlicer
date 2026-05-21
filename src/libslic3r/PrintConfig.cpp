@@ -8733,6 +8733,11 @@ Polygons get_bed_excluded_area(const PrintConfig& cfg)
 {
     if (is_bed_exclusion_volume_syntax(cfg.bed_exclude_area.serialize()))
         return {};
+    const std::vector<BedExcludeRegion> regions = get_bed_excluded_regions(cfg);
+    if (std::any_of(regions.begin(), regions.end(), [](const BedExcludeRegion &region) {
+        return region.from_3d_config && region.has_z_range;
+    }))
+        return {};
 
     const Pointfs exclude_area_points = cfg.bed_exclude_area.values;
 

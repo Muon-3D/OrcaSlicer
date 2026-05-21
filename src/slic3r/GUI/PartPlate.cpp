@@ -4,6 +4,8 @@
 #include <vector>
 #include <string>
 #include <regex>
+#include <iomanip>
+#include <sstream>
 #include <future>
 #include <GL/glew.h>
 #include <boost/algorithm/string.hpp>
@@ -503,47 +505,6 @@ static bool init_model_from_polygons(GLModel &model, const Polygons &polygons, f
         model.init_from(std::move(init_data));
 
     return true;
-}
-
-static Lines clipped_diagonal_hatch_lines(const Polygons &clip_polygons, coord_t spacing)
-{
-    Lines result;
-    if (clip_polygons.empty())
-        return result;
-
-    BoundingBox bbox;
-    for (const Polygon &polygon : clip_polygons)
-        bbox.merge(polygon.points);
-    if (!bbox.defined)
-        return result;
-
-    spacing = std::max<coord_t>(spacing, scale_(1.0));
-    const coord_t margin = std::max(bbox.size().x(), bbox.size().y()) + spacing;
-    const coord_t x_min = bbox.min.x() - margin;
-    const coord_t x_max = bbox.max.x() + margin;
-    const coord_t c_min = bbox.min.y() - bbox.max.x() - margin;
-    const coord_t c_max = bbox.max.y() - bbox.min.x() + margin;
-
-    Lines subject;
-    for (coord_t c = c_min; c <= c_max; c += spacing)
-        subject.emplace_back(Point(x_min, x_min + c), Point(x_max, x_max + c));
-
-    return _clipper_ln(ClipperLib::ctIntersection, subject, clip_polygons);
-}
-
-static Polygons clipped_diagonal_hatch_ribbons(const Polygons &clip_polygons, coord_t spacing, coord_t width)
-{
-    const Lines center_lines = clipped_diagonal_hatch_lines(clip_polygons, spacing);
-    if (center_lines.empty())
-        return {};
-
-    Polylines polylines;
-    polylines.reserve(center_lines.size());
-    for (const Slic3r::Line &line : center_lines)
-        polylines.emplace_back(line.a, line.b);
-
-    Polygons ribbons = offset(polylines, float(std::max<coord_t>(width, scale_(0.5)) / 2), jtSquare, 0.0, ClipperLib::etOpenSquare);
-    return intersection(ribbons, clip_polygons);
 }
 
 struct ExclusionVolumePrismPreview
@@ -1053,23 +1014,89 @@ double PartPlate::max_broad_phase_intersecting_object_height(const Polygons& reg
     return max_height;
 }
 
+std::string PartPlate::exclusion_volume_preview_cache_key(const std::vector<BedExcludeRegion> &regions) const
+{
+    std::ostringstream key;
+    key << std::setprecision(17);
+    key << "plate:" << m_origin.x() << ',' << m_origin.y() << ',' << m_height << ';';
+
+    key << "regions:" << regions.size() << ';';
+    for (const BedExcludeRegion &region : regions) {
+        key << region.z_min << ".." << region.z_max << ':'
+            << region.from_3d_config << ':' << region.has_z_range << ':'
+            << region.polygon.points.size();
+        for (const Point &point : region.polygon.points)
+            key << ',' << point.x() << 'x' << point.y();
+        key << ';';
+    }
+
+    key << "instances:" << obj_to_instance_set.size() << ';';
+    if (m_model != nullptr) {
+        for (const std::pair<int, int> &object_instance : obj_to_instance_set) {
+            const int obj_id = object_instance.first;
+            const int instance_id = object_instance.second;
+            key << obj_id << ':' << instance_id << ':';
+            if (obj_id < 0 || obj_id >= int(m_model->objects.size())) {
+                key << "invalid;";
+                continue;
+            }
+
+            const ModelObject *object = m_model->objects[obj_id];
+            if (instance_id < 0 || instance_id >= int(object->instances.size())) {
+                key << "invalid;";
+                continue;
+            }
+
+            const ModelInstance *instance = object->instances[instance_id];
+            key << static_cast<const void*>(object) << ':' << static_cast<const void*>(instance) << ':'
+                << object->volumes.size() << ':' << instance->printable << ':';
+
+            const Transform3d instance_matrix = instance->get_matrix();
+            for (int r = 0; r < int(instance_matrix.matrix().rows()); ++r)
+                for (int c = 0; c < int(instance_matrix.matrix().cols()); ++c)
+                    key << instance_matrix.matrix()(r, c) << ',';
+
+            for (const ModelVolume *volume : object->volumes) {
+                key << static_cast<const void*>(volume) << ':';
+                const Transform3d volume_matrix = volume->get_matrix();
+                for (int r = 0; r < int(volume_matrix.matrix().rows()); ++r)
+                    for (int c = 0; c < int(volume_matrix.matrix().cols()); ++c)
+                        key << volume_matrix.matrix()(r, c) << ',';
+            }
+            key << ';';
+        }
+    }
+
+    return key.str();
+}
+
 void PartPlate::update_exclusion_volume_preview_models()
 {
+    const DynamicPrintConfig *config = m_plater != nullptr ? m_plater->config() : nullptr;
+    if (config == nullptr) {
+        m_exclusion_volume_preview_cache_key.clear();
+        m_exclusion_volume_floor_triangles.reset();
+        m_exclusion_volume_border_triangles.reset();
+        m_active_exclusion_volume_prisms.reset();
+        m_exclusion_volume_intersection_triangles.reset();
+        return;
+    }
+
+    std::vector<BedExcludeRegion> regions = get_bed_excluded_regions(*config);
+    const std::string cache_key = exclusion_volume_preview_cache_key(regions);
+    if (cache_key == m_exclusion_volume_preview_cache_key)
+        return;
+    m_exclusion_volume_preview_cache_key = cache_key;
+
     m_exclusion_volume_floor_triangles.reset();
-    m_exclusion_volume_hatch_triangles.reset();
     m_exclusion_volume_border_triangles.reset();
     m_active_exclusion_volume_prisms.reset();
-
-    const DynamicPrintConfig *config = m_plater != nullptr ? m_plater->config() : nullptr;
-    if (config == nullptr)
-        return;
+    m_exclusion_volume_intersection_triangles.reset();
 
     const Point plate_offset(scale_(m_origin.x()), scale_(m_origin.y()));
     Polygons floor_regions;
-    Polygons hatch_regions;
     Polygons border_regions;
     const coord_t ribbon_width = scale_(1.6);
-    std::vector<BedExcludeRegion> regions = get_bed_excluded_regions(*config);
     std::vector<std::pair<BedExcludeRegion, Polygon>> preview_regions;
     Polygons preview_footprints;
     std::vector<ExclusionVolumePrismPreview> active_prisms;
@@ -1078,22 +1105,17 @@ void PartPlate::update_exclusion_volume_preview_models()
         Polygon region = region_src.polygon;
         region.translate(plate_offset);
         region.make_counter_clockwise();
-        preview_regions.emplace_back(region_src, region);
+        BedExcludeRegion translated_region = region_src;
+        translated_region.polygon = region;
+        preview_regions.emplace_back(std::move(translated_region), region);
         preview_footprints.emplace_back(region);
 
         if (region_src.from_3d_config) {
             if (!region_src.has_z_range || region_src.z_min <= EPSILON) {
                 floor_regions.emplace_back(region);
             } else {
-                Polygons inner = offset(Polygons{ region }, -scale_(1.0), jtMiter, 2.0);
-                if (inner.empty())
-                    inner = { region };
-
-                Polygons border = intersection(contour_to_polygons(inner, float(ribbon_width), jtMiter, 2.0), inner);
+                Polygons border = intersection(contour_to_polygons(region, float(ribbon_width), jtMiter, 2.0), Polygons{ region });
                 border_regions.insert(border_regions.end(), border.begin(), border.end());
-
-                Polygons hatch_ribbons = clipped_diagonal_hatch_ribbons(inner, scale_(6.0), ribbon_width);
-                hatch_regions.insert(hatch_regions.end(), hatch_ribbons.begin(), hatch_ribbons.end());
             }
         }
     }
@@ -1109,17 +1131,49 @@ void PartPlate::update_exclusion_volume_preview_models()
         }
     }
 
+    indexed_triangle_set intersection_triangles;
+    if (m_model != nullptr && !preview_regions.empty()) {
+        for (const std::pair<int, int> &object_instance : obj_to_instance_set) {
+            const int obj_id = object_instance.first;
+            const int instance_id = object_instance.second;
+            if (obj_id < 0 || obj_id >= int(m_model->objects.size()))
+                continue;
+
+            ModelObject *object = m_model->objects[obj_id];
+            if (instance_id < 0 || instance_id >= int(object->instances.size()))
+                continue;
+
+            ModelInstance *instance = object->instances[instance_id];
+            if (!instance->printable)
+                continue;
+
+            Polygon hull = instance->convex_hull_2d();
+            const BoundingBoxf3 instance_box = object->instance_convex_hull_bounding_box(instance_id);
+            for (const std::pair<BedExcludeRegion, Polygon> &preview_region : preview_regions) {
+                const BedExcludeRegion &region = preview_region.first;
+                if (intersection(Polygons{ preview_region.second }, Polygons{ hull }).empty())
+                    continue;
+                if (instance_box.max.z() < region.z_min || instance_box.min.z() > region.z_max)
+                    continue;
+
+                indexed_triangle_set region_intersections;
+                if (instance->intersects_bed_exclude_region(region, &region_intersections) && !region_intersections.empty())
+                    its_merge(intersection_triangles, region_intersections);
+            }
+        }
+    }
+
     if (!floor_regions.empty() && !init_model_from_polygons(m_exclusion_volume_floor_triangles, floor_regions, GROUND_Z + 0.01f))
         BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ":Unable to create exclusion volume floor preview triangles\n";
 
-    if (!hatch_regions.empty() && !init_model_from_polygons(m_exclusion_volume_hatch_triangles, hatch_regions, GROUND_Z + 0.016f))
-        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ":Unable to create exclusion volume hatch preview ribbons\n";
-
     if (!border_regions.empty() && !init_model_from_polygons(m_exclusion_volume_border_triangles, border_regions, GROUND_Z + 0.018f))
-        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ":Unable to create exclusion volume hatch preview border\n";
+        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ":Unable to create exclusion volume preview border\n";
 
     if (!active_prisms.empty() && !init_exclusion_volume_prism_model(m_active_exclusion_volume_prisms, active_prisms))
         BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ":Unable to create active exclusion volume preview prisms\n";
+
+    if (!intersection_triangles.empty())
+        m_exclusion_volume_intersection_triangles.init_from(intersection_triangles);
 }
 
 void PartPlate::render_exclusion_volume_previews(bool force_default_color)
@@ -1138,17 +1192,37 @@ void PartPlate::render_exclusion_volume_previews(bool force_default_color)
     m_exclusion_volume_floor_triangles.set_color(floor_color);
     m_exclusion_volume_floor_triangles.render();
 
-    m_exclusion_volume_hatch_triangles.set_color(ribbon_color);
-    m_exclusion_volume_hatch_triangles.render();
-
     m_exclusion_volume_border_triangles.set_color(ribbon_color);
     m_exclusion_volume_border_triangles.render();
 
     m_active_exclusion_volume_prisms.set_color(prism_color);
     m_active_exclusion_volume_prisms.render();
 
+    render_exclusion_volume_intersections();
+
     glsafe(::glLineWidth(1.0f * m_scale_factor));
     glsafe(::glDepthMask(GL_TRUE));
+}
+
+void PartPlate::render_exclusion_volume_intersections()
+{
+    if (!m_exclusion_volume_intersection_triangles.is_initialized())
+        return;
+
+    const ColorRGBA intersection_color{ .68f, .02f, .02f, .58f };
+
+    glsafe(::glEnable(GL_POLYGON_OFFSET_FILL));
+    glsafe(::glPolygonOffset(-1.0f, -1.0f));
+
+    m_exclusion_volume_intersection_triangles.set_color(intersection_color);
+    m_exclusion_volume_intersection_triangles.render();
+
+    glsafe(::glDisable(GL_POLYGON_OFFSET_FILL));
+}
+
+void PartPlate::clear_exclusion_volume_intersections()
+{
+    m_exclusion_volume_intersection_triangles.reset();
 }
 
 
@@ -2380,19 +2454,15 @@ bool PartPlate::check_outside(int obj_id, int instance_id, BoundingBoxf3* boundi
                 region.translate(plate_offset);
                 region.make_counter_clockwise();
 
-                // Broad 2D overlap is conclusive only for legacy full-height exclusion areas.
                 if (intersection(Polygons{ region }, Polygons{ hull }).empty())
                     continue;
-                if (!region_src.has_z_range) {
-                    outside = true;
-                    break;
-                }
 
                 if (instance_box.max.z() < region_src.z_min || instance_box.min.z() > region_src.z_max)
                     continue;
 
-                const ExPolygons &footprint = instance->z_slab_projected_footprint_2d(region_src.z_min, region_src.z_max);
-                if (!footprint.empty() && !intersection(footprint, Polygons{ region }).empty()) {
+                BedExcludeRegion translated_region = region_src;
+                translated_region.polygon = region;
+                if (instance->intersects_bed_exclude_region(translated_region)) {
                     outside = true;
                     break;
                 }

@@ -1276,9 +1276,27 @@ public:
     ConfigOption*           clone() const override { return new ConfigOptionPoints(*this); }
     ConfigOptionPoints&     operator= (const ConfigOption *opt) { this->set(opt); return *this; }
     bool                    operator==(const ConfigOptionPoints &rhs) const throw() { return this->values == rhs.values && m_serialized_override == rhs.m_serialized_override; }
+    bool                    operator==(const ConfigOption &rhs) const override
+    {
+        if (rhs.type() != this->type())
+            throw ConfigurationError("ConfigOptionPoints: Comparing incompatible types");
+        assert(dynamic_cast<const ConfigOptionPoints*>(&rhs));
+        const ConfigOptionPoints *other = static_cast<const ConfigOptionPoints*>(&rhs);
+        return this->values == other->values && m_serialized_override == other->m_serialized_override;
+    }
     bool                    operator< (const ConfigOptionPoints &rhs) const throw()
         { return std::lexicographical_compare(this->values.begin(), this->values.end(), rhs.values.begin(), rhs.values.end(), [](const auto &l, const auto &r){ return l < r; }); }
     bool					is_nil(size_t) const override { return false; }
+
+    void set(const ConfigOption *rhs) override
+    {
+        if (rhs->type() != this->type())
+            throw ConfigurationError("ConfigOptionPoints: Assigning an incompatible type");
+        assert(dynamic_cast<const ConfigOptionPoints*>(rhs));
+        const ConfigOptionPoints *other = static_cast<const ConfigOptionPoints*>(rhs);
+        this->values = other->values;
+        m_serialized_override = other->m_serialized_override;
+    }
 
     std::string serialize() const override
     {
@@ -1355,6 +1373,17 @@ public:
             this->values.push_back(point);
         }
         return true;
+    }
+
+    size_t hash() const throw() override
+    {
+        size_t seed = 0;
+        std::hash<Vec2d> point_hasher;
+        std::hash<std::string> string_hasher;
+        for (const Vec2d &point : this->values)
+            boost::hash_combine(seed, point_hasher(point));
+        boost::hash_combine(seed, string_hasher(m_serialized_override));
+        return seed;
     }
 
 private:
