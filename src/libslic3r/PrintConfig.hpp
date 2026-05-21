@@ -1482,6 +1482,7 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionPointsGroups,       extruder_printable_area))
     //BBS: add bed_exclude_area
     ((ConfigOptionPoints,             bed_exclude_area))
+    ((ConfigOptionString,             bed_exclude_area_3d))
     ((ConfigOptionPoints,             head_wrap_detect_zone))
     // BBS
     ((ConfigOptionString,             bed_custom_texture))
@@ -2013,6 +2014,16 @@ Polygon get_shared_poly(const std::vector<Pointfs>& extruder_polys);
 Points get_bed_shape(const DynamicPrintConfig &cfg, bool use_share = true);
 Points get_bed_shape(const PrintConfig &cfg, bool use_share = false);
 Points get_bed_shape(const SLAPrinterConfig &cfg);
+struct BedExcludeRegion {
+    Polygon polygon;
+    double  z_min { 0.0 };
+    double  z_max { 0.0 };
+    bool    from_3d_config { false };
+    bool    has_z_range { false };
+};
+std::vector<BedExcludeRegion> get_bed_excluded_regions(const DynamicPrintConfig& cfg);
+std::vector<BedExcludeRegion> get_bed_excluded_regions(const PrintConfig& cfg);
+bool has_bed_exclusion_volume_syntax(const ConfigOptionPoints& bed_exclude_area);
 Slic3r::Polygons get_bed_excluded_area(const PrintConfig& cfg);
 Slic3r::Polygon get_bed_shape_with_excluded_area(const PrintConfig& cfg, bool use_share = false);
 bool has_skirt(const DynamicPrintConfig& cfg);
