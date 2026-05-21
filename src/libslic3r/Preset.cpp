@@ -895,7 +895,7 @@ static std::vector<std::string> s_Preset_machine_limits_options {
 
 static std::vector<std::string> s_Preset_printer_options {
     "printer_technology",
-    "printable_area", "bed_exclude_area", "bed_exclude_area_3d", "bed_custom_texture", "bed_custom_model", "gcode_flavor",
+    "printable_area", "bed_exclude_area", "bed_custom_texture", "bed_custom_model", "gcode_flavor",
     "fan_kickstart", "fan_speedup_time", "fan_speedup_overhangs",
     "single_extruder_multi_material", "manual_filament_change", "machine_start_gcode", "machine_end_gcode", "before_layer_change_gcode", "printing_by_object_gcode", "layer_change_gcode", "time_lapse_gcode", "change_filament_gcode", "change_extrusion_role_gcode",
     "printer_model", "printer_variant", "printable_height", "extruder_clearance_radius", "extruder_clearance_height_to_lid", "extruder_clearance_height_to_rod",
@@ -2699,7 +2699,7 @@ inline t_config_option_keys deep_diff(const ConfigBase &config_this, const Confi
         if (this_opt != nullptr && other_opt != nullptr && *this_opt != *other_opt)
         {
             //BBS: add bed_exclude_area
-            if (opt_key == "printable_area" || opt_key == "bed_exclude_area" || opt_key == "bed_exclude_area_3d" || opt_key == "compatible_prints" || opt_key == "compatible_printers" || opt_key == "thumbnails") {
+            if (opt_key == "printable_area" || opt_key == "bed_exclude_area" || opt_key == "compatible_prints" || opt_key == "compatible_printers" || opt_key == "thumbnails") {
                 // Scalar variable, or a vector variable, which is independent from number of extruders,
                 // thus the vector is presented to the user as a single input.
                 diff.emplace_back(opt_key);
