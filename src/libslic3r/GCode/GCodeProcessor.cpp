@@ -562,6 +562,14 @@ void GCodeProcessorResult::reset() {
     bed_exclude_area = Pointfs();
     //BBS: add toolpath_outside
     toolpath_outside = false;
+    exclusion_volume_path_checked = false;
+    exclusion_volume_path_conflict = false;
+    exclusion_volume_travel_conflict = false;
+    exclusion_volume_extrusion_conflict = false;
+    exclusion_volume_other_motion_conflict = false;
+    exclusion_volume_conflict_gcode_id = 0;
+    exclusion_volume_conflict_move_id = 0;
+    exclusion_volume_conflict_move_type = EMoveType::Noop;
     //BBS: add label_object_enabled
     label_object_enabled = false;
     timelapse_warning_code = 0;
@@ -590,6 +598,14 @@ void GCodeProcessorResult::reset() {
     bed_exclude_area = Pointfs();
     //BBS: add toolpath_outside
     toolpath_outside = false;
+    exclusion_volume_path_checked = false;
+    exclusion_volume_path_conflict = false;
+    exclusion_volume_travel_conflict = false;
+    exclusion_volume_extrusion_conflict = false;
+    exclusion_volume_other_motion_conflict = false;
+    exclusion_volume_conflict_gcode_id = 0;
+    exclusion_volume_conflict_move_id = 0;
+    exclusion_volume_conflict_move_type = EMoveType::Noop;
     //BBS: add label_object_enabled
     label_object_enabled = false;
     long_retraction_when_cut = false;

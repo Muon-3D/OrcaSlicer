@@ -12,6 +12,7 @@
 #include "GCode/PrintExtents.hpp"
 #include "GCode/Thumbnails.hpp"
 #include "GCode/WipeTower.hpp"
+#include "GCode/ExclusionVolumePathCheck.hpp"
 #include "ShortestPath.hpp"
 #include "Print.hpp"
 #include "Utils.hpp"
@@ -1573,6 +1574,20 @@ void GCode::do_export(Print* print, const char* path, GCodeProcessorResult* resu
     }
 
     m_processor.finalize(true);
+    {
+        const std::vector<BedExcludeRegion> exclusion_regions =
+            translated_bed_exclusion_regions(print->config(), print->get_plate_origin());
+        const ExclusionVolumePathCheckResult exclusion_check =
+            check_gcode_moves_against_exclusion_volumes(m_processor.get_result(), exclusion_regions);
+        apply_exclusion_volume_path_check_result(m_processor.result(), exclusion_check);
+
+        if (exclusion_check.has_any_conflict) {
+            std::string warning = _(L("A generated toolpath move intersects an exclusion volume. This may cause a printer collision."));
+            if (exclusion_check.first_hit && exclusion_check.first_hit->gcode_id != 0)
+                warning += "\n" + Slic3r::format(_(L("First detected near G-code line %1%.")), std::to_string(exclusion_check.first_hit->gcode_id));
+            print->active_step_add_warning(PrintStateBase::WarningLevel::CRITICAL, warning);
+        }
+    }
 //    DoExport::update_print_estimated_times_stats(m_processor, print->m_print_statistics);
     DoExport::update_print_estimated_stats(m_processor, m_writer.extruders(), print->m_print_statistics, print->config());
     if (result != nullptr) {

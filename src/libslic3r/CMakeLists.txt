@@ -179,6 +179,8 @@ set(lisbslic3r_sources
     GCode/WipeTower.hpp
     GCode/WipeTower2.cpp
     GCode/WipeTower2.hpp
+    GCode/ExclusionVolumePathCheck.cpp
+    GCode/ExclusionVolumePathCheck.hpp
     GCode/GCodeProcessor.cpp
     GCode/GCodeProcessor.hpp
     GCode/AvoidCrossingPerimeters.cpp

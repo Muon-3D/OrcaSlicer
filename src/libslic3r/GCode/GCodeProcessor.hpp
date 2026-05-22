@@ -201,6 +201,14 @@ class Print;
         Pointfs bed_exclude_area;
         //BBS: add toolpath_outside
         bool toolpath_outside;
+        bool exclusion_volume_path_checked { false };
+        bool exclusion_volume_path_conflict { false };
+        bool exclusion_volume_travel_conflict { false };
+        bool exclusion_volume_extrusion_conflict { false };
+        bool exclusion_volume_other_motion_conflict { false };
+        unsigned int exclusion_volume_conflict_gcode_id { 0 };
+        size_t exclusion_volume_conflict_move_id { 0 };
+        EMoveType exclusion_volume_conflict_move_type { EMoveType::Noop };
         //BBS: add object_label_enabled
         bool label_object_enabled;
         //BBS : extra retraction when change filament,experiment func
@@ -241,6 +249,14 @@ class Print;
             printable_area = other.printable_area;
             bed_exclude_area = other.bed_exclude_area;
             toolpath_outside = other.toolpath_outside;
+            exclusion_volume_path_checked = other.exclusion_volume_path_checked;
+            exclusion_volume_path_conflict = other.exclusion_volume_path_conflict;
+            exclusion_volume_travel_conflict = other.exclusion_volume_travel_conflict;
+            exclusion_volume_extrusion_conflict = other.exclusion_volume_extrusion_conflict;
+            exclusion_volume_other_motion_conflict = other.exclusion_volume_other_motion_conflict;
+            exclusion_volume_conflict_gcode_id = other.exclusion_volume_conflict_gcode_id;
+            exclusion_volume_conflict_move_id = other.exclusion_volume_conflict_move_id;
+            exclusion_volume_conflict_move_type = other.exclusion_volume_conflict_move_type;
             label_object_enabled = other.label_object_enabled;
             long_retraction_when_cut = other.long_retraction_when_cut;
             timelapse_warning_code = other.timelapse_warning_code;

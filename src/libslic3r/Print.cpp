@@ -12,6 +12,7 @@
 #include "Thread.hpp"
 #include "Time.hpp"
 #include "GCode.hpp"
+#include "GCode/ExclusionVolumePathCheck.hpp"
 #include "GCode/WipeTower.hpp"
 #include "GCode/WipeTower2.hpp"
 #include "Utils.hpp"
@@ -54,13 +55,7 @@ PrintRegion::PrintRegion(PrintRegionConfig &&config) : PrintRegion(std::move(con
 
 static std::vector<BedExcludeRegion> translated_bed_exclusion_volumes(const Print &print)
 {
-    std::vector<BedExcludeRegion> regions = get_bed_excluded_regions(print.config());
-    const Point print_origin(scale_(print.get_plate_origin().x()), scale_(print.get_plate_origin().y()));
-
-    for (BedExcludeRegion &region : regions)
-        region.polygon.translate(print_origin);
-
-    return regions;
+    return translated_bed_exclusion_regions(print.config(), print.get_plate_origin());
 }
 
 static bool intersects_bed_exclusion_volume(const ModelInstance &instance, const std::vector<BedExcludeRegion> &regions)
@@ -2977,6 +2972,9 @@ void Print::export_gcode_from_previous_file(const std::string& file, GCodeProces
         processor.set_xy_offset(origin(0), origin(1));
         //processor.enable_producers(true);
         processor.process_file(file);
+        const ExclusionVolumePathCheckResult exclusion_check =
+            check_gcode_moves_against_exclusion_volumes(processor.get_result(), translated_bed_exclusion_volumes(*this));
+        apply_exclusion_volume_path_check_result(processor.result(), exclusion_check);
 
         *result = std::move(processor.extract_result());
     } catch (std::exception & /* ex */) {
