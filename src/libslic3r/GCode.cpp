@@ -1442,6 +1442,7 @@ void GCode::do_export(Print* print, const char* path, GCodeProcessorResult* resu
 
     // BBS
     m_curr_print = print;
+    m_exclusion_volume_travel_avoidance.init(print->config(), print->get_plate_origin());
 
     GCodeWriter::full_gcode_comment = print->config().gcode_comments;
     CNumericLocalesSetter locales_setter;
@@ -6072,6 +6073,47 @@ std::string GCode::travel_to(const Point& point, ExtrusionRole role, std::string
     // Save state of use_external_mp_once for the case that will be needed to call twice m_avoid_crossing_perimeters.travel_to.
     const bool used_external_mp_once  = m_avoid_crossing_perimeters.used_external_mp_once();
     std::string gcode;
+    bool exclusion_volume_travel_rerouted = false;
+
+    auto to_gcode_point = [this](const Point &local_point) {
+        const Vec2d point = this->point_to_gcode(local_point);
+        return Point(scale_(point.x()), scale_(point.y()));
+    };
+    auto to_local_point = [this](const Point &gcode_point) {
+        return Point(
+            scale_(unscale_(gcode_point.x()) - m_origin.x()),
+            scale_(unscale_(gcode_point.y()) - m_origin.y()));
+    };
+    auto to_gcode_polyline = [&to_gcode_point](const Polyline &local_path) {
+        Polyline out;
+        out.points.reserve(local_path.points.size());
+        for (const Point &point : local_path.points)
+            out.append(to_gcode_point(point));
+        return out;
+    };
+    auto to_local_polyline = [&to_local_point](const Polyline &gcode_path) {
+        Polyline out;
+        out.points.reserve(gcode_path.points.size());
+        for (const Point &point : gcode_path.points)
+            out.append(to_local_point(point));
+        return out;
+    };
+    auto nominal_writer_z = [this]() {
+        return m_writer.get_position().z() - m_writer.get_zhop();
+    };
+    auto route_around_exclusion_volumes = [&](Polyline &path) {
+        if (m_exclusion_volume_travel_avoidance.empty() || path.size() < 2)
+            return false;
+
+        const double target_z = z == DBL_MAX ? m_nominal_z : z;
+        ExclusionVolumeTravelAvoidance::Result result =
+            m_exclusion_volume_travel_avoidance.route(to_gcode_polyline(path), nominal_writer_z(), target_z);
+        if (!result.rerouted())
+            return false;
+
+        path = to_local_polyline(result.path);
+        return true;
+    };
 
     // Orca: we don't need to optimize the Klipper as only set once
     double jerk_to_set = 0.0;
@@ -6111,6 +6153,11 @@ std::string GCode::travel_to(const Point& point, ExtrusionRole role, std::string
         //if (needs_retraction && m_layer_index > 1) exit(0);
     }
 
+    if (route_around_exclusion_volumes(travel)) {
+        exclusion_volume_travel_rerouted = true;
+        needs_retraction = this->needs_retraction(travel, role, lift_type);
+    }
+
     // Re-allow reduce_crossing_wall for the next travel moves
     m_avoid_crossing_perimeters.reset_once_modifiers();
 
@@ -6126,15 +6173,20 @@ std::string GCode::travel_to(const Point& point, ExtrusionRole role, std::string
         // When "Wipe while retracting" is enabled, then extruder moves to another position, and travel from this position can cross perimeters.
         // Because of it, it is necessary to call avoid crossing perimeters again with new starting point after calling retraction()
         // FIXME Lukas H.: Try to predict if this second calling of avoid crossing perimeters will be needed or not. It could save computations.
-        if (last_post_before_retract != this->last_pos() && m_config.reduce_crossing_wall) {
-            // If in the previous call of m_avoid_crossing_perimeters.travel_to was use_external_mp_once set to true restore this value for next call.
-            if (used_external_mp_once)
-                m_avoid_crossing_perimeters.use_external_mp_once();
-            travel = m_avoid_crossing_perimeters.travel_to(*this, point);
-            // If state of use_external_mp_once was changed reset it to right value.
-            if (used_external_mp_once)
-                m_avoid_crossing_perimeters.reset_once_modifiers();
+        if (last_post_before_retract != this->last_pos()) {
+            travel = Polyline { this->last_pos(), point };
+            if (m_config.reduce_crossing_wall) {
+                // If in the previous call of m_avoid_crossing_perimeters.travel_to was use_external_mp_once set to true restore this value for next call.
+                if (used_external_mp_once)
+                    m_avoid_crossing_perimeters.use_external_mp_once();
+                travel = m_avoid_crossing_perimeters.travel_to(*this, point);
+                // If state of use_external_mp_once was changed reset it to right value.
+                if (used_external_mp_once)
+                    m_avoid_crossing_perimeters.reset_once_modifiers();
+            }
         }
+
+        exclusion_volume_travel_rerouted = route_around_exclusion_volumes(travel);
     } else {
         // Reset the wipe path when traveling, so one would not wipe along an old path.
         m_wipe.reset_path();
@@ -6167,23 +6219,37 @@ std::string GCode::travel_to(const Point& point, ExtrusionRole role, std::string
                 gcode += m_writer.travel_to_xyz(dest3d, comment, m_need_change_layer_lift_z);
                 m_need_change_layer_lift_z = false;
             } else {
-                // Extra movements emitted by avoid_crossing_perimeters, lift the z to normal height at the beginning, then apply the z
-                // ratio at the last point
-                for (size_t i = 1; i < travel.size(); ++i) {
-                    if (i == 1) {
-                        // Lift to normal z at beginning
+                if (exclusion_volume_travel_rerouted && z != DBL_MAX) {
+                    const double start_z = m_writer.get_position().z();
+                    const double total_length = std::max(travel.length(), 1.0);
+                    double traveled = 0.0;
+                    for (size_t i = 1; i < travel.size(); ++i) {
+                        traveled += (travel.points[i] - travel.points[i - 1]).cast<double>().norm();
                         Vec2d dest2d = this->point_to_gcode(travel.points[i]);
-                        Vec3d dest3d(dest2d(0), dest2d(1), m_nominal_z);
-                        gcode += m_writer.travel_to_xyz(dest3d, comment, m_need_change_layer_lift_z);
-                        m_need_change_layer_lift_z = false;
-                    } else if (z != DBL_MAX && i == travel.size() - 1) {
-                        // Apply z_ratio for the very last point
-                        Vec2d dest2d = this->point_to_gcode(travel.points[i]);
-                        Vec3d dest3d(dest2d(0), dest2d(1), z);
-                        gcode += m_writer.travel_to_xyz(dest3d, comment);
-                    } else {
-                        // For all points in between, no z change
-                        gcode += m_writer.travel_to_xy(this->point_to_gcode(travel.points[i]), comment);
+                        Vec3d dest3d(dest2d(0), dest2d(1), start_z + (z - start_z) * std::min(1.0, traveled / total_length));
+                        gcode += m_writer.travel_to_xyz(dest3d, comment, i == 1 ? m_need_change_layer_lift_z : false);
+                        if (i == 1)
+                            m_need_change_layer_lift_z = false;
+                    }
+                } else {
+                    // Extra movements emitted by avoid_crossing_perimeters, lift the z to normal height at the beginning, then apply the z
+                    // ratio at the last point
+                    for (size_t i = 1; i < travel.size(); ++i) {
+                        if (i == 1) {
+                            // Lift to normal z at beginning
+                            Vec2d dest2d = this->point_to_gcode(travel.points[i]);
+                            Vec3d dest3d(dest2d(0), dest2d(1), m_nominal_z);
+                            gcode += m_writer.travel_to_xyz(dest3d, comment, m_need_change_layer_lift_z);
+                            m_need_change_layer_lift_z = false;
+                        } else if (z != DBL_MAX && i == travel.size() - 1) {
+                            // Apply z_ratio for the very last point
+                            Vec2d dest2d = this->point_to_gcode(travel.points[i]);
+                            Vec3d dest3d(dest2d(0), dest2d(1), z);
+                            gcode += m_writer.travel_to_xyz(dest3d, comment);
+                        } else {
+                            // For all points in between, no z change
+                            gcode += m_writer.travel_to_xy(this->point_to_gcode(travel.points[i]), comment);
+                        }
                     }
                 }
             }
