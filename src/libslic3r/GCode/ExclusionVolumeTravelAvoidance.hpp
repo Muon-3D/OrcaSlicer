@@ -49,7 +49,7 @@ private:
 
     std::vector<BedExcludeRegion> m_regions;
     Polygon                       m_bed_shape;
-    coord_t                       m_clearance { SCALED_EPSILON };
+    coord_t                       m_clearance { 0 };
 };
 
 } // namespace Slic3r

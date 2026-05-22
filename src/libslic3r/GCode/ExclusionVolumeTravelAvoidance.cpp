@@ -331,14 +331,16 @@ void ExclusionVolumeTravelAvoidance::init(const PrintConfig &config, const Vec3d
     // Keep the detour visibly outside the configured region without inventing a
     // large, hidden clearance policy. The post-generation path check still uses
     // the exact configured volume as the source of truth.
-    m_clearance = std::max<coord_t>(SCALED_EPSILON, coord_t(scale_(std::max(0.05, 0.1 * max_nozzle_diameter))));
+        const coord_t min_clearance        = static_cast<coord_t>(SCALED_EPSILON);
+        const coord_t configured_clearance = static_cast<coord_t>(scale_(std::max(0.05, 0.1 * max_nozzle_diameter)));
+        m_clearance = std::max(min_clearance, configured_clearance);
 }
 
 void ExclusionVolumeTravelAvoidance::clear()
 {
     m_regions.clear();
     m_bed_shape.points.clear();
-    m_clearance = SCALED_EPSILON;
+    m_clearance = static_cast<coord_t>(SCALED_EPSILON);
 }
 
 std::optional<ExclusionVolumeTravelAvoidance::ActiveObstacles> ExclusionVolumeTravelAvoidance::active_obstacles(
