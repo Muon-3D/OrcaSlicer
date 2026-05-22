@@ -310,8 +310,6 @@ void apply_exclusion_volume_path_check_result(
     result.exclusion_volume_conflict_gcode_id = check_result.first_hit ? check_result.first_hit->gcode_id : 0;
     result.exclusion_volume_conflict_move_id = check_result.first_hit ? check_result.first_hit->move_id : 0;
     result.exclusion_volume_conflict_move_type = check_result.first_hit ? check_result.first_hit->move_type : EMoveType::Noop;
-    if (check_result.has_any_conflict)
-        result.toolpath_outside = true;
 }
 
 } // namespace Slic3r

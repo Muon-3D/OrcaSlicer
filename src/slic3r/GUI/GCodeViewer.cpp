@@ -2392,17 +2392,11 @@ void GCodeViewer::load_toolpaths(const GCodeProcessorResult& gcode_result, const
     {
         m_contained_in_bed = build_volume.all_paths_inside(gcode_result, m_paths_bounding_box);
 
-        bool exclusion_volume_conflict = gcode_result.exclusion_volume_path_checked ?
-            gcode_result.exclusion_volume_path_conflict : false;
         if (!gcode_result.exclusion_volume_path_checked && !exclusion_regions.empty()) {
             const ExclusionVolumePathCheckResult exclusion_check =
                 check_gcode_moves_against_exclusion_volumes(gcode_result, exclusion_regions);
             apply_exclusion_volume_path_check_result(const_cast<GCodeProcessorResult&>(gcode_result), exclusion_check);
-            exclusion_volume_conflict = exclusion_check.has_any_conflict;
         }
-
-        if (exclusion_volume_conflict)
-            m_contained_in_bed = false;
 
         (const_cast<GCodeProcessorResult&>(gcode_result)).toolpath_outside = !m_contained_in_bed;
     }

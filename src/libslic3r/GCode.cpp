@@ -1582,10 +1582,10 @@ void GCode::do_export(Print* print, const char* path, GCodeProcessorResult* resu
         apply_exclusion_volume_path_check_result(m_processor.result(), exclusion_check);
 
         if (exclusion_check.has_any_conflict) {
-            std::string warning = _(L("A generated toolpath move intersects an exclusion volume. This may cause a printer collision."));
-            if (exclusion_check.first_hit && exclusion_check.first_hit->gcode_id != 0)
-                warning += "\n" + Slic3r::format(_(L("First detected near G-code line %1%.")), std::to_string(exclusion_check.first_hit->gcode_id));
-            print->active_step_add_warning(PrintStateBase::WarningLevel::CRITICAL, warning);
+            print->active_step_add_warning(
+                PrintStateBase::WarningLevel::CRITICAL,
+                _(L("A generated toolpath move intersects an exclusion volume. This may cause a printer collision.")),
+                PrintStateBase::SlicingExclusionVolumeToolpath);
         }
     }
 //    DoExport::update_print_estimated_times_stats(m_processor, print->m_print_statistics);
