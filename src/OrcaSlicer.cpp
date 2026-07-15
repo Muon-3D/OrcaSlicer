@@ -4774,7 +4774,7 @@ int CLI::run(int argc, char **argv)
                 }
 
                 // add the virtual object into unselect list if has
-                partplate_list.preprocess_exclude_areas(unselected, enable_wrapping_detect, i + 1);
+                partplate_list.preprocess_exclude_areas(unselected, m_print_config, enable_wrapping_detect, i + 1);
                 if (avoid_extrusion_cali_region)
                     partplate_list.preprocess_nonprefered_areas(unselected, i + 1);
 
@@ -4802,7 +4802,10 @@ int CLI::run(int argc, char **argv)
 
                 beds = get_shrink_bedpts(&m_print_config, arrange_cfg);
 
-                partplate_list.preprocess_exclude_areas(arrange_cfg.excluded_regions, enable_wrapping_detect, 1, scale_(1));
+                partplate_list.preprocess_exclude_areas(
+                    arrange_cfg.excluded_regions, m_print_config, enable_wrapping_detect, 1, scale_(1));
+                if (has_bed_exclusion_regions(arrange_cfg.excluded_regions))
+                    arrange_cfg.do_final_align = false;
 
                 {
                     BOOST_LOG_TRIVIAL(debug) << "arrange bedpts:" << beds[0].transpose() << ", " << beds[1].transpose() << ", " << beds[2].transpose() << ", " << beds[3].transpose();
@@ -4822,6 +4825,7 @@ int CLI::run(int argc, char **argv)
                 //Step-3:do the arrange
                 BOOST_LOG_TRIVIAL(info) << boost::format("start plate %1%'s arranging...") % (i + 1);
                 arrangement::arrange(selected, unselected, beds, arrange_cfg);
+                invalidate_bed_exclusion_conflicts(selected, unselected);
                 //arrangement::arrange(unprintable, {}, beds, arrange_cfg);
                 BOOST_LOG_TRIVIAL(info) << boost::format("finished plate %1%'s arranging") % (i + 1);
 
@@ -5011,7 +5015,7 @@ int CLI::run(int argc, char **argv)
                     }
 
                     //add the virtual object into unselect list if has
-                    partplate_list.preprocess_exclude_areas(unselected, enable_wrapping_detect);
+                    partplate_list.preprocess_exclude_areas(unselected, m_print_config, enable_wrapping_detect);
 
                     if (used_filament_set.size() > 0)
                     {
@@ -5224,7 +5228,8 @@ int CLI::run(int argc, char **argv)
                     }
 
                     // add the virtual object into unselect list if has
-                    partplate_list.preprocess_exclude_areas(unselected, enable_wrapping_detect, plate_to_slice);
+                    partplate_list.preprocess_exclude_areas(
+                        unselected, m_print_config, enable_wrapping_detect, plate_to_slice);
                 }
 
 
@@ -5252,7 +5257,10 @@ int CLI::run(int argc, char **argv)
 
                 beds=get_shrink_bedpts(&m_print_config, arrange_cfg);
 
-                partplate_list.preprocess_exclude_areas(arrange_cfg.excluded_regions, enable_wrapping_detect, 1, scale_(1));
+                partplate_list.preprocess_exclude_areas(
+                    arrange_cfg.excluded_regions, m_print_config, enable_wrapping_detect, 1, scale_(1));
+                if (has_bed_exclusion_regions(arrange_cfg.excluded_regions))
+                    arrange_cfg.do_final_align = false;
 
                 {
                     BOOST_LOG_TRIVIAL(debug) << "arrange bedpts:" << beds[0].transpose() << ", " << beds[1].transpose() << ", " << beds[2].transpose() << ", " << beds[3].transpose();
@@ -5272,6 +5280,7 @@ int CLI::run(int argc, char **argv)
                 //Step-3:do the arrange
                 BOOST_LOG_TRIVIAL(info) << boost::format("start %1% th arranging...")%arrange_count;
                 arrangement::arrange(selected, unselected, beds, arrange_cfg);
+                invalidate_bed_exclusion_conflicts(selected, unselected);
                 arrangement::arrange(unprintable, {}, beds, arrange_cfg);
                 BOOST_LOG_TRIVIAL(info) << boost::format("finished %1% th arranging...")%arrange_count;
 
