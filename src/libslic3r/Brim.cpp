@@ -8,10 +8,12 @@
 #include "PrintConfig.hpp"
 #include "MaterialType.hpp"
 #include "Model.hpp"
+#include "Support/SupportCommon.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <numeric>
+#include <optional>
 #include <tbb/parallel_for.h>
 
 #include <boost/log/trivial.hpp>
@@ -25,37 +27,6 @@
 #endif
 
 namespace Slic3r {
-
-static std::vector<size_t> brim_physical_extruders(
-    const Print &print,
-    const size_t filament_id,
-    const size_t physical_extruder_count)
-{
-    if (physical_extruder_count == 0)
-        return {};
-
-    if (const auto grouping = print.get_layered_nozzle_group_result()) {
-        if (const auto nozzle = grouping->get_nozzle_for_filament(int(filament_id), 0);
-            nozzle.has_value() && nozzle->extruder_id >= 0 &&
-            size_t(nozzle->extruder_id) < physical_extruder_count)
-            return { size_t(nozzle->extruder_id) };
-    }
-
-    const bool automatic_mapping_resolved =
-        !is_auto_filament_map_mode(print.get_filament_map_mode()) || !print.is_BBL_printer() ||
-        print.get_nozzle_group_result() != nullptr;
-    const int resolved = bed_exclusion_extruder_for_filament(
-        filament_id, print.get_filament_maps(), print.get_filament_map_mode(), print.is_BBL_printer(),
-        automatic_mapping_resolved, physical_extruder_count);
-    if (resolved >= 0)
-        return { size_t(resolved) };
-
-    // Generated geometry must remain safe if a late automatic assignment has
-    // not selected a physical nozzle yet.
-    std::vector<size_t> candidates(physical_extruder_count);
-    std::iota(candidates.begin(), candidates.end(), size_t(0));
-    return candidates;
-}
 
 static coord_t brim_exclusion_clearance(const Flow &flow)
 {
@@ -478,10 +449,6 @@ static ExPolygons outer_inner_brim_area(const Print& print,
         get_bed_excluded_regions_by_extruder(print.config());
     const double first_layer_top_z = std::max(0.0, print.skirt_first_layer_height());
     const coord_t exclusion_clearance = brim_exclusion_clearance(flow);
-    std::vector<size_t> combined_brim_physical_extruders;
-    if (combine_object_brims(print) && !printExtruders.empty())
-        combined_brim_physical_extruders = brim_physical_extruders(
-            print, printExtruders.front(), exclusion_regions_by_extruder.size());
 
     ExPolygons brim_area;
     ExPolygons no_brim_area;
@@ -720,11 +687,8 @@ static ExPolygons outer_inner_brim_area(const Print& print,
         std::vector<size_t> object_physical_extruders;
 
         if (iter != objPrintVec.end() && iter->second > 0) {
-            object_physical_extruders = brim_physical_extruders(
-                print, size_t(iter->second - 1), exclusion_regions_by_extruder.size());
-            object_physical_extruders.insert(
-                object_physical_extruders.end(),
-                combined_brim_physical_extruders.begin(), combined_brim_physical_extruders.end());
+            object_physical_extruders = bed_exclusion_physical_extruders(
+                print, { iter->second - 1 }, exclusion_regions_by_extruder.size(), 0);
             for (const size_t extruder_id : object_physical_extruders) {
                 if (extruder_id >= extruder_unprintable_area.size())
                     continue;
@@ -751,22 +715,12 @@ static ExPolygons outer_inner_brim_area(const Print& print,
 
         if (supportBrimAreaMap.find(object->id()) != supportBrimAreaMap.end()) {
             supportBrimAreaMap[object->id()] = diff_ex(supportBrimAreaMap[object->id()], extruder_no_brim_area);
-            unsigned int support_filament = object->config().support_filament.value;
-            if (support_filament == 0 && object->has_support_material()) {
-                if (print.config().print_sequence == PrintSequence::ByObject && iter != objPrintVec.end())
-                    support_filament = iter->second;
-                else if (!printExtruders.empty())
-                    support_filament = printExtruders.front() + 1;
-            }
-
-            std::vector<size_t> support_physical_extruders;
-            if (support_filament > 0)
-                support_physical_extruders = brim_physical_extruders(
-                    print, size_t(support_filament - 1), exclusion_regions_by_extruder.size());
-            if (support_physical_extruders.empty()) {
-                support_physical_extruders.resize(exclusion_regions_by_extruder.size());
-                std::iota(support_physical_extruders.begin(), support_physical_extruders.end(), size_t(0));
-            }
+            // With "current filament", the layer tool ordering may print this
+            // brim with any candidate support nozzle. Clip against their union
+            // rather than guessing the first filament selected for the layer.
+            const std::vector<size_t> support_physical_extruders = bed_exclusion_physical_extruders(
+                print, support_exclusion_filaments(*object, false),
+                exclusion_regions_by_extruder.size(), 0);
             const ExPolygons exclusions = active_bed_exclusion_footprints(
                 exclusion_regions_by_extruder, support_physical_extruders,
                 0.0, first_layer_top_z, Point(0, 0), exclusion_clearance);
@@ -981,6 +935,7 @@ ExtrusionEntityCollection makeBrimInfillFromPlateCoordinates(const ExPolygons& s
 //BBS: an overload of the orignal brim generator that generates the brim by obj and by extruders
 void make_brim(const Print& print, PrintTryCancel try_cancel, Polygons& islands_area,
     std::map<ObjectID, ExtrusionEntityCollection>& brimMap,
+    std::map<ObjectID, unsigned int>& brimFilamentMap,
     std::map<ObjectID, ExtrusionEntityCollection>& supportBrimMap,
     std::vector<std::pair<ObjectID, unsigned int>> &objPrintVec,
     std::vector<unsigned int>& printExtruders,
@@ -1047,13 +1002,52 @@ void make_brim(const Print& print, PrintTryCancel try_cancel, Polygons& islands_
     if (supportBrimAreasOut != nullptr)
         *supportBrimAreasOut = translate_area_map(supportBrimAreaMap);
 
-    const bool combine_brims = combine_object_brims(print);
+    auto brim_filament = [&objPrintVec](const ObjectID object_id) -> std::optional<unsigned int> {
+        const auto it = std::find_if(objPrintVec.begin(), objPrintVec.end(),
+            [object_id](const std::pair<ObjectID, unsigned int> &item) { return item.first == object_id; });
+        return it == objPrintVec.end() || it->second == 0 ? std::nullopt :
+                                                            std::optional<unsigned int>(it->second - 1);
+    };
+
+    const std::vector<std::vector<BedExcludeRegion>> exclusion_regions_by_extruder =
+        get_bed_excluded_regions_by_extruder(print.config());
+    const bool has_exclusion_regions = std::any_of(
+        exclusion_regions_by_extruder.begin(), exclusion_regions_by_extruder.end(),
+        [](const std::vector<BedExcludeRegion> &regions) { return !regions.empty(); });
+    const bool has_nozzle_specific_exclusions = has_exclusion_regions &&
+        print.config().bed_exclude_area_mode.value != BedExcludeAreaMode::Shared;
+
+    bool combine_brims = combine_object_brims(print);
+    if (combine_brims && has_nozzle_specific_exclusions) {
+        std::vector<unsigned int> contributing_filaments;
+        for (const auto &[object_id, areas] : brimAreaMap) {
+            if (areas.empty())
+                continue;
+            const std::optional<unsigned int> filament = brim_filament(object_id);
+            if (!filament.has_value()) {
+                combine_brims = false;
+                break;
+            }
+            contributing_filaments.emplace_back(*filament);
+        }
+
+        // A unified brim has one emission nozzle. If contributing filaments do
+        // not resolve to the same known physical nozzle, preserve their
+        // separate ownership and let the grouping stage combine safe subsets.
+        if (combine_brims && bed_exclusion_physical_extruders(
+                print, contributing_filaments, exclusion_regions_by_extruder.size(), 0).size() != 1)
+            combine_brims = false;
+    }
 
     if (!combine_brims) {
         // Orca: Generate brims separately when brims cannot be combined.
         for (auto iter = brimAreaMap.begin(); iter != brimAreaMap.end(); ++iter) {
             if (!iter->second.empty()) {
+                const std::optional<unsigned int> filament = brim_filament(iter->first);
+                if (!filament.has_value())
+                    continue;
                 brimMap.insert(std::make_pair(iter->first, makeBrimInfill(iter->second, print, islands_area)));
+                brimFilamentMap[iter->first] = *filament;
             };
         }
         for (auto iter = supportBrimAreaMap.begin(); iter != supportBrimAreaMap.end(); ++iter) {
@@ -1082,9 +1076,6 @@ void make_brim(const Print& print, PrintTryCancel try_cancel, Polygons& islands_
             const float brim_cleanup_delta = std::max(float(scaled_resolution), float(SCALED_EPSILON));
             all_brims_merged = offset2_ex(all_brims_merged, brim_cleanup_delta, -brim_cleanup_delta, jtRound, scaled_resolution);
 
-            // Generate infill once for the merged brim area.
-            ExtrusionEntityCollection merged_brim = makeBrimInfill(all_brims_merged, print, islands_area);
-
             // In unified mode, assign the merged brim to a deterministic carrier object.
             // Pick the first object in print order that actually contributed brim area.
             ObjectID carrier_id;
@@ -1100,7 +1091,25 @@ void make_brim(const Print& print, PrintTryCancel try_cancel, Polygons& islands_
             if (!carrier_found)
                 carrier_id = brim_object_ids.front();
 
-            brimMap[carrier_id] = std::move(merged_brim);
+            const std::optional<unsigned int> filament = brim_filament(carrier_id);
+            if (filament.has_value()) {
+                // Boolean cleanup and line preparation happen after the
+                // per-object clipping. Re-clip the final union against the
+                // nozzle which will actually emit it as a safety invariant.
+                const std::vector<size_t> physical_extruders = bed_exclusion_physical_extruders(
+                    print, { *filament }, exclusion_regions_by_extruder.size(), 0);
+                const ExPolygons exclusions = active_bed_exclusion_footprints(
+                    exclusion_regions_by_extruder, physical_extruders, 0.0,
+                    std::max(0.0, print.skirt_first_layer_height()), Point(0, 0),
+                    brim_exclusion_clearance(flow));
+                if (!exclusions.empty())
+                    all_brims_merged = diff_ex(all_brims_merged, exclusions);
+
+                if (!all_brims_merged.empty()) {
+                    brimMap[carrier_id] = makeBrimInfill(all_brims_merged, print, islands_area);
+                    brimFilamentMap[carrier_id] = *filament;
+                }
+            }
         }
     }
 }

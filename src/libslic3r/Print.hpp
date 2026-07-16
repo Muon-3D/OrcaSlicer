@@ -978,6 +978,8 @@ public:
         struct Brim {
             ExtrusionEntityCollection brim;
             std::vector<ObjectID>     object_ids;
+            // Zero-based logical filament selected when the brim was planned.
+            unsigned int              filament_id { unsigned(-1) };
         };
 
         ExtrusionEntityCollection skirt;
@@ -1279,6 +1281,9 @@ private:
     bool                                    m_has_shared_per_object_skirt { false };
     // BBS: collecting extrusion paths to build brim by objs
     std::map<ObjectID, ExtrusionEntityCollection>         m_brimMap;
+    // Brim geometry may be carried by a different object after combining, so
+    // retain its planned filament instead of inferring it during G-code output.
+    std::map<ObjectID, unsigned int>                       m_brimFilamentMap;
     std::map<ObjectID, ExtrusionEntityCollection>         m_supportBrimMap;
     // Orca: cached occupied brim footprints used when grouping per-object skirts.
     std::map<ObjectID, ExPolygons>                        m_objectBrimAreas;

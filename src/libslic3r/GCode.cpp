@@ -5017,13 +5017,24 @@ std::string GCode::generate_object_skirt_group(const Print &print,
                           object_skirt_tools, layer, extruder_id, m_skirt_group_done[group_idx]);
 }
 
-std::string GCode::generate_object_brim(const Print &print, const PrintObject &object, bool first_layer)
+std::string GCode::generate_object_brim(
+    const Print &print,
+    const PrintObject &object,
+    const bool first_layer,
+    const unsigned int extruder_id)
 {
     if (!first_layer)
         return {};
 
-    auto emit_brim = [this](const ExtrusionEntityCollection& brim, const std::vector<ObjectID>& object_ids) {
+    auto emit_brim = [this, extruder_id](const ExtrusionEntityCollection& brim,
+                                         const std::vector<ObjectID>& object_ids,
+                                         const unsigned int brim_filament_id) {
         std::string gcode;
+        // Combined brims have an explicit owner filament. Waiting for that
+        // filament avoids inheriting whichever tool first encounters a carrier
+        // object in the layer traversal.
+        if (brim_filament_id != extruder_id)
+            return gcode;
         const bool already_emitted = std::none_of(object_ids.begin(), object_ids.end(), [this](ObjectID object_id) {
             return m_objsWithBrim.find(object_id) != m_objsWithBrim.end();
         });
@@ -5047,7 +5058,9 @@ std::string GCode::generate_object_brim(const Print &print, const PrintObject &o
     if (print.config().combine_brims && !has_per_object_skirt_or_shield &&
         print.config().print_sequence != PrintSequence::ByObject && print.m_brimMap.size() == 1) {
         const auto brim_it = print.m_brimMap.begin();
-        return emit_brim(brim_it->second, { brim_it->first });
+        const auto filament_it = print.m_brimFilamentMap.find(brim_it->first);
+        return filament_it == print.m_brimFilamentMap.end() ? std::string{} :
+            emit_brim(brim_it->second, { brim_it->first }, filament_it->second);
     }
 
     const size_t group_idx = find_skirt_brim_group_idx(print, object.id());
@@ -5055,14 +5068,16 @@ std::string GCode::generate_object_brim(const Print &print, const PrintObject &o
         std::string gcode;
         for (const Print::SkirtBrimGroup::Brim& brim : print.skirt_brim_groups()[group_idx].brims)
             if (std::find(brim.object_ids.begin(), brim.object_ids.end(), object.id()) != brim.object_ids.end())
-                gcode += emit_brim(brim.brim, brim.object_ids);
+                gcode += emit_brim(brim.brim, brim.object_ids, brim.filament_id);
         return gcode;
     }
 
     const auto brim_it = print.m_brimMap.find(object.id());
     if (brim_it == print.m_brimMap.end())
         return {};
-    return emit_brim(brim_it->second, { object.id() });
+    const auto filament_it = print.m_brimFilamentMap.find(object.id());
+    return filament_it == print.m_brimFilamentMap.end() ? std::string{} :
+        emit_brim(brim_it->second, { object.id() }, filament_it->second);
 }
 
 // Bedslinger model. The heavier the bed load, the lower the achievable Y acceleration for a given
@@ -6184,7 +6199,7 @@ LayerResult GCode::process_layer(
                 const LayerToPrint &layer_to_print = layers[instance_to_print.layer_id];
                 if (print_wipe_extrusions == (is_anything_overridden ? 1 : 0)) {
                     gcode += generate_object_skirt_group(print, instance_to_print.print_object, layer_tools, layer, extruder_id);
-                    gcode += generate_object_brim(print, instance_to_print.print_object, first_layer);
+                    gcode += generate_object_brim(print, instance_to_print.print_object, first_layer, extruder_id);
                 }
 
                 // To control print speed of the 1st object layer printed over raft interface.

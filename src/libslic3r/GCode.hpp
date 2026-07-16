@@ -365,7 +365,8 @@ private:
         unsigned int extruder_id);
     std::string generate_object_brim(const Print &print,
         const PrintObject &object,
-        bool first_layer);
+        bool first_layer,
+        unsigned int extruder_id);
 
     LayerResult process_layer(
         const Print                     &print,

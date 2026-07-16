@@ -18,6 +18,7 @@ class ObjectID;
 // Collect islands_area to be merged into the final 1st layer convex hull.
 void make_brim(const Print& print, PrintTryCancel try_cancel,
     Polygons& islands_area, std::map<ObjectID, ExtrusionEntityCollection>& brimMap,
+    std::map<ObjectID, unsigned int>& brimFilamentMap,
     std::map<ObjectID, ExtrusionEntityCollection>& supportBrimMap,
     std::vector<std::pair<ObjectID, unsigned int>>& objPrintVec,
     std::vector<unsigned int>& printExtruders,
