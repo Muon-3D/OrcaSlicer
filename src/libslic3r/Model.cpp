@@ -3437,7 +3437,7 @@ static std::vector<Vec3d> clip_polygon_by_signed_distance(const std::vector<Vec3
     if (input.empty())
         return output;
 
-    auto append_point = [&output, duplicate_epsilon_sq](const Vec3d &point) {
+    auto append_point = [&output](const Vec3d &point) {
         if (output.empty() || (output.back() - point).squaredNorm() > duplicate_epsilon_sq)
             output.emplace_back(point);
     };
