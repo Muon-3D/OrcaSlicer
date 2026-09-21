@@ -114,7 +114,10 @@ void ExclusionVolumePathChecker::configure(const PrintConfig &config)
         std::vector<PreparedRegion> &prepared = m_regions_by_extruder[extruder_id];
         prepared.reserve(regions[extruder_id].size());
         for (const BedExcludeRegion &region : regions[extruder_id]) {
-            if (region.polygon.points.size() < 3 || region.z_max < region.z_min)
+            // Legacy excluded areas are material keep-outs. Some stock profiles
+            // deliberately move the nozzle into them (for example, a cutter), so
+            // only explicitly configured collision volumes constrain motion.
+            if (!region.is_collision_volume() || region.polygon.points.size() < 3 || region.z_max < region.z_min)
                 continue;
 
             PreparedRegion item;

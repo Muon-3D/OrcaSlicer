@@ -187,11 +187,6 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         "reduce_crossing_wall",
         "max_travel_detour_distance",
         "printable_area",
-        //BBS: add bed_exclude_area
-        "bed_exclude_area_mode",
-        "bed_exclude_area",
-        "extruder_bed_exclude_area",
-        "extruder_offset",
         "thumbnail_size",
         "before_layer_change_gcode",
         "enable_pressure_advance",
@@ -215,7 +210,6 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         "extruder_clearance_radius",
         "nozzle_height",
         "extruder_colour",
-        "extruder_offset",
         "filament_flow_ratio",
         "reduce_fan_stop_start_freq",
         "dont_slow_down_outer_wall",
@@ -337,13 +331,27 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
     };
 
     static std::unordered_set<std::string> steps_ignore;
+    static const std::unordered_set<std::string> steps_exclusion_geometry = {
+        "bed_exclude_area",
+        "bed_exclude_volumes",
+        "bed_exclude_volume_mode",
+        "extruder_bed_exclude_volumes",
+        "extruder_offset"
+    };
 
     std::vector<PrintStep> steps;
     std::vector<PrintObjectStep> osteps;
     bool invalidated = false;
 
     for (const t_config_option_key &opt_key : opt_keys) {
-        if (steps_gcode.find(opt_key) != steps_gcode.end()) {
+        if (steps_exclusion_geometry.find(opt_key) != steps_exclusion_geometry.end()) {
+            // Exclusions are consumed while generating brims, support, tree
+            // support and wipe-tower geometry, not only during final export.
+            steps.emplace_back(psWipeTower);
+            steps.emplace_back(psSkirtBrim);
+            osteps.emplace_back(posSupportMaterial);
+            osteps.emplace_back(posSimplifySupportPath);
+        } else if (steps_gcode.find(opt_key) != steps_gcode.end()) {
             // These options only affect G-code export or they are just notes without influence on the generated G-code,
             // so there is nothing to invalidate.
             steps.emplace_back(psGCodeExport);
@@ -3298,7 +3306,7 @@ void Print::_make_skirt()
             brim_exclusion_regions.begin(), brim_exclusion_regions.end(),
             [](const std::vector<BedExcludeRegion> &regions) { return !regions.empty(); });
         const bool has_nozzle_specific_brim_exclusions = has_brim_exclusions &&
-            m_config.bed_exclude_area_mode.value != BedExcludeAreaMode::Shared;
+            active_bed_exclude_volume_mode(m_config) != BedExcludeVolumeMode::Shared;
 
         auto make_brims_for_skirt_brim_group =
             [this, &brim_exclusion_regions, has_nozzle_specific_brim_exclusions]

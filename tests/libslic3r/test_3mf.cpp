@@ -159,10 +159,11 @@ TEST_CASE("Volumetric per-extruder exclusions survive a 3MF round-trip", "[3mf][
     // exclusion settings and should not depend on unrelated printer-profile
     // defaults surviving the project archive round-trip.
     DynamicPrintConfig source;
-    source.set_key_value("bed_exclude_area_mode",
-                         new ConfigOptionEnum<BedExcludeAreaMode>(BedExcludeAreaMode::PerExtruder));
+    source.set_key_value("bed_exclude_volume_mode",
+                         new ConfigOptionEnum<BedExcludeVolumeMode>(BedExcludeVolumeMode::PerExtruder));
     source.set_deserialize_strict("bed_exclude_area", "0x0,10x0,10x10,0x10");
-    source.set_key_value("extruder_bed_exclude_area", new ConfigOptionStrings{
+    source.set_key_value("bed_exclude_volumes", new ConfigOptionString("0..10;1x1,2x1,2x2,1x2"));
+    source.set_key_value("extruder_bed_exclude_volumes", new ConfigOptionStrings{
         "0..25;5x5,15x5,15x15,5x15",
         "30..80;40x40,55x40,55x55,40x55|0..5;70x10,80x10,80x20,70x20",
     });
@@ -197,14 +198,18 @@ TEST_CASE("Volumetric per-extruder exclusions survive a 3MF round-trip", "[3mf][
     release_PlateData_list(reloaded_plates);
 
     REQUIRE(loaded);
-    REQUIRE(reloaded.option<ConfigOptionEnum<BedExcludeAreaMode>>("bed_exclude_area_mode") != nullptr);
-    CHECK(reloaded.option<ConfigOptionEnum<BedExcludeAreaMode>>("bed_exclude_area_mode")->value ==
-          BedExcludeAreaMode::PerExtruder);
+    REQUIRE(reloaded.option<ConfigOptionEnum<BedExcludeVolumeMode>>("bed_exclude_volume_mode") != nullptr);
+    CHECK(reloaded.option<ConfigOptionEnum<BedExcludeVolumeMode>>("bed_exclude_volume_mode")->value ==
+          BedExcludeVolumeMode::PerExtruder);
 
-    const auto *areas = reloaded.option<ConfigOptionStrings>("extruder_bed_exclude_area");
+    const auto *areas = reloaded.option<ConfigOptionStrings>("extruder_bed_exclude_volumes");
     REQUIRE(areas != nullptr);
     REQUIRE(areas->values.size() == 2);
-    CHECK(areas->values == source.option<ConfigOptionStrings>("extruder_bed_exclude_area")->values);
+    CHECK(areas->values == source.option<ConfigOptionStrings>("extruder_bed_exclude_volumes")->values);
+
+    const auto *shared_volumes = reloaded.option<ConfigOptionString>("bed_exclude_volumes");
+    REQUIRE(shared_volumes != nullptr);
+    CHECK(shared_volumes->value == source.opt_string("bed_exclude_volumes"));
 
     const auto *legacy = reloaded.option<ConfigOptionPoints>("bed_exclude_area");
     REQUIRE(legacy != nullptr);

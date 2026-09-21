@@ -410,6 +410,8 @@ void ExclusionVolumeTravelAvoidance::init(const PrintConfig &config, const Vec3d
     for (size_t extruder_id = 0; extruder_id < regions_by_extruder.size(); ++extruder_id) {
         RoutingSpace &space = m_spaces[extruder_id];
         space.regions = std::move(regions_by_extruder[extruder_id]);
+        space.regions.erase(std::remove_if(space.regions.begin(), space.regions.end(),
+            [](const BedExcludeRegion &region) { return !region.is_collision_volume(); }), space.regions.end());
 
         const Vec2d extruder_offset = extruder_id < config.extruder_offset.values.size() ?
             config.extruder_offset.values[extruder_id] : Vec2d::Zero();

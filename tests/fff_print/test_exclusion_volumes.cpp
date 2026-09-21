@@ -24,7 +24,7 @@ using Catch::Matchers::WithinAbs;
 namespace {
 
 DynamicPrintConfig exclusion_config(
-    BedExcludeAreaMode mode = BedExcludeAreaMode::Shared,
+    BedExcludeVolumeMode mode = BedExcludeVolumeMode::Shared,
     const std::string &shared = "0..10;40x40,60x40,60x60,40x60",
     const std::vector<std::string> &per_extruder = {})
 {
@@ -38,10 +38,18 @@ DynamicPrintConfig exclusion_config(
     config.set_key_value("printable_area", new ConfigOptionPoints{
         Vec2d(0.0, 0.0), Vec2d(100.0, 0.0), Vec2d(100.0, 100.0), Vec2d(0.0, 100.0),
     });
-    config.set_key_value("bed_exclude_area_mode", new ConfigOptionEnum<BedExcludeAreaMode>(mode));
-    config.set_deserialize_strict("bed_exclude_area", shared);
+    config.set_key_value("bed_exclude_volume_mode", new ConfigOptionEnum<BedExcludeVolumeMode>(mode));
+    config.set_key_value("bed_exclude_volumes", new ConfigOptionString(shared));
     if (!per_extruder.empty())
-        config.set_key_value("extruder_bed_exclude_area", new ConfigOptionStrings(per_extruder));
+        config.set_key_value("extruder_bed_exclude_volumes", new ConfigOptionStrings(per_extruder));
+    return config;
+}
+
+DynamicPrintConfig legacy_exclusion_config()
+{
+    DynamicPrintConfig config = exclusion_config();
+    config.set_key_value("bed_exclude_volumes", new ConfigOptionString());
+    config.set_deserialize_strict("bed_exclude_area", "40x40,60x40,60x60,40x60");
     return config;
 }
 
@@ -227,7 +235,7 @@ struct BrimRun
 
 BrimRun generate_brim(const std::string &exclusion_definition)
 {
-    DynamicPrintConfig config = exclusion_config(BedExcludeAreaMode::Shared, exclusion_definition);
+    DynamicPrintConfig config = exclusion_config(BedExcludeVolumeMode::Shared, exclusion_definition);
     config.set_deserialize_strict({
         {"skirt_loops", "0"},
         {"brim_type", "outer_only"},
@@ -260,7 +268,7 @@ BrimRun generate_brim(const std::string &exclusion_definition)
 DynamicPrintConfig support_config(int support_filament, int interface_filament)
 {
     DynamicPrintConfig config = exclusion_config(
-        BedExcludeAreaMode::PerExtruder, "",
+        BedExcludeVolumeMode::PerExtruder, "",
         {"0..10;4x4,12x4,12x12,4x12", "0..10;22x4,30x4,30x12,22x12"});
     // PrintObject clamps support role ids against the number of logical
     // filaments, represented by filament_diameter in the static config.
@@ -320,6 +328,23 @@ TEST_CASE("Path checker ignores clear motions and motions outside the active Z s
         check_motion(checker, Vec3d(20.0, 50.0, -5.0), Vec3d(80.0, 50.0, -5.0));
         CHECK_FALSE(checker.result().has_any_conflict);
     }
+}
+
+TEST_CASE("Legacy excluded areas do not constrain machine motion", "[ExclusionVolume][GCode][Compatibility]")
+{
+    const FullPrintConfig config = static_config(legacy_exclusion_config());
+    const Polyline direct = travel({Vec2d(20.0, 50.0), Vec2d(80.0, 50.0)});
+
+    auto checker = configured_checker(config);
+    check_motion(checker, Vec3d(20.0, 50.0, 5.0), Vec3d(80.0, 50.0, 5.0));
+    CHECK_FALSE(checker.result().has_any_conflict);
+
+    ExclusionVolumeTravelAvoidance router;
+    router.init(config, Vec3d::Zero());
+    const auto route = router.route(direct, 5.0, 5.0, 0);
+    CHECK(route.status == ExclusionVolumeTravelAvoidance::Status::Unchanged);
+    CHECK(route.detail == ExclusionVolumeTravelAvoidance::Detail::NoActiveObstacles);
+    CHECK(route.path.points == direct.points);
 }
 
 TEST_CASE("Path checker detects crossing inside and boundary motions", "[ExclusionVolume][GCode]")
@@ -386,7 +411,7 @@ TEST_CASE("Path checker handles unknown coordinates conservatively without inven
 TEST_CASE("Path checker selects the active nozzle and applies its XY offset", "[ExclusionVolume][GCode][MultiNozzle]")
 {
     DynamicPrintConfig dynamic = exclusion_config(
-        BedExcludeAreaMode::PerExtruder, "", {"", "0..10;40x40,60x40,60x60,40x60"});
+        BedExcludeVolumeMode::PerExtruder, "", {"", "0..10;40x40,60x40,60x60,40x60"});
     dynamic.set_key_value("extruder_offset", new ConfigOptionPoints{Vec2d::Zero(), Vec2d(20.0, 0.0)});
     const FullPrintConfig config = static_config(dynamic);
 
@@ -482,7 +507,7 @@ TEST_CASE("Travel router reports unsafe endpoints unknown tools and blocked beds
     SECTION("obstacle separates the bed") {
         ExclusionVolumeTravelAvoidance router;
         router.init(static_config(exclusion_config(
-            BedExcludeAreaMode::Shared, "0..10;45x0,55x0,55x100,45x100")), Vec3d::Zero());
+            BedExcludeVolumeMode::Shared, "0..10;45x0,55x0,55x100,45x100")), Vec3d::Zero());
         const auto result = router.route(travel({Vec2d(20.0, 50.0), Vec2d(80.0, 50.0)}), 5.0, 5.0, 0);
         CHECK(result.status == ExclusionVolumeTravelAvoidance::Status::Failed);
     }
@@ -491,7 +516,7 @@ TEST_CASE("Travel router reports unsafe endpoints unknown tools and blocked beds
 TEST_CASE("Travel router uses only the active nozzle exclusion set", "[ExclusionVolume][TravelRouting][MultiNozzle]")
 {
     const FullPrintConfig config = static_config(exclusion_config(
-        BedExcludeAreaMode::PerExtruder, "", {"0..10;40x40,60x40,60x60,40x60", ""}));
+        BedExcludeVolumeMode::PerExtruder, "", {"0..10;40x40,60x40,60x60,40x60", ""}));
     ExclusionVolumeTravelAvoidance router;
     router.init(config, Vec3d::Zero());
     const Polyline direct = travel({Vec2d(20.0, 50.0), Vec2d(80.0, 50.0)});
@@ -539,6 +564,17 @@ TEST_CASE("G-code processor tracks absolute relative and reset coordinate state"
         const ProcessorExclusionResult result = run_processor(config, "G28\nG1 X80 Y50 Z5\n");
         CHECK_FALSE(result.conflict);
     }
+
+    SECTION("all supported homing-axis spellings make the homed position unknown") {
+        const std::string homing = GENERATE(
+            std::string("G28"), std::string("G28 X"), std::string("G28 X Y"),
+            std::string("G28 XY"), std::string("G28 X0 Y0"), std::string("G28 XYZ"),
+            std::string("G28 Z P0"), std::string("G28 Z Z_OFFSET -0.07"),
+            std::string("G28 W"));
+        const ProcessorExclusionResult result = run_processor(
+            config, "G90\nG1 X20 Y50 Z5\n" + homing + "\nG1 X80 Y50 Z5\n");
+        CHECK_FALSE(result.conflict);
+    }
 }
 
 TEST_CASE("G-code processor classifies extrusion conflicts", "[ExclusionVolume][GCodeProcessor]")
@@ -555,7 +591,7 @@ TEST_CASE("G-code processor classifies extrusion conflicts", "[ExclusionVolume][
 TEST_CASE("G-code processor changes the active physical nozzle at tool selection", "[ExclusionVolume][GCodeProcessor][MultiNozzle]")
 {
     const FullPrintConfig config = static_config(exclusion_config(
-        BedExcludeAreaMode::PerExtruder, "", {"", "0..10;40x40,60x40,60x60,40x60"}));
+        BedExcludeVolumeMode::PerExtruder, "", {"", "0..10;40x40,60x40,60x60,40x60"}));
 
     const ProcessorExclusionResult first_tool = run_processor(config, "G90\nT0\nG1 X20 Y50 Z5\nG1 X80 Y50\n");
     CHECK_FALSE(first_tool.conflict);

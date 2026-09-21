@@ -7331,7 +7331,7 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
     , main_frame(main_frame)
     //BBS: add bed_exclude_area
     , config(Slic3r::DynamicPrintConfig::new_from_defaults_keys({
-        "printable_area", "bed_exclude_area_mode", "bed_exclude_area", "extruder_bed_exclude_area", "extruder_offset",
+        "printable_area", "bed_exclude_area", "bed_exclude_volumes", "bed_exclude_volume_mode", "extruder_bed_exclude_volumes", "extruder_offset",
         "wrapping_exclude_area", "extruder_printable_area", "bed_custom_texture", "bed_custom_model", "print_sequence",
         "extruder_clearance_radius",
         "extruder_clearance_height_to_lid", "extruder_clearance_height_to_rod",
@@ -20082,8 +20082,8 @@ void Plater::on_config_change(const DynamicPrintConfig &config)
         }
 
         p->config->set_key_value(opt_key, config.option(opt_key)->clone());
-        if (opt_key == "bed_exclude_area_mode" || opt_key == "bed_exclude_area" ||
-            opt_key == "extruder_bed_exclude_area" || opt_key == "extruder_offset" ||
+        if (opt_key == "bed_exclude_volume_mode" || opt_key == "bed_exclude_area" ||
+            opt_key == "bed_exclude_volumes" || opt_key == "extruder_bed_exclude_volumes" || opt_key == "extruder_offset" ||
             opt_key == "master_extruder_id" || opt_key == "nozzle_diameter" ||
             opt_key == "printable_height" || opt_key == "extruder_colour")
             exclusion_preview_changed = true;
@@ -20099,8 +20099,8 @@ void Plater::on_config_change(const DynamicPrintConfig &config)
             p->partplate_list.invalid_all_slice_result();
         }
         //BBS: add bed_exclude_area
-        else if (opt_key == "printable_area" || opt_key == "bed_exclude_area_mode" || opt_key == "bed_exclude_area"
-            || opt_key == "extruder_bed_exclude_area" || opt_key == "extruder_offset"
+        else if (opt_key == "printable_area" || opt_key == "bed_exclude_volume_mode" || opt_key == "bed_exclude_area"
+            || opt_key == "bed_exclude_volumes" || opt_key == "extruder_bed_exclude_volumes" || opt_key == "extruder_offset"
             || opt_key == "bed_custom_texture" || opt_key == "bed_custom_model"
             || opt_key == "extruder_clearance_height_to_lid"
             || opt_key == "extruder_clearance_height_to_rod") {
@@ -20239,7 +20239,7 @@ void Plater::set_bed_shape() const
     const ConfigOptionPoints *bed_exclude_area = p->config->option<ConfigOptionPoints>("bed_exclude_area");
     set_bed_shape(p->config->option<ConfigOptionPoints>("printable_area")->values,
         //BBS: add bed exclude areas
-        has_bed_exclusion_volume_syntax(*bed_exclude_area) ? Pointfs{} : bed_exclude_area->values,
+        has_bed_exclude_volumes(*p->config) ? Pointfs{} : bed_exclude_area->values,
         p->config->option<ConfigOptionPoints>("wrapping_exclude_area")->values,
         p->config->option<ConfigOptionFloat>("printable_height")->value,
         p->config->option<ConfigOptionPointsGroups>("extruder_printable_area")->values,

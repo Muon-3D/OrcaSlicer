@@ -1805,6 +1805,54 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
         return;
     }
 
+    // A legacy point option cannot represent multiple or Z-limited regions. If
+    // that syntax is pasted into the legacy field, offer an explicit, atomic
+    // conversion rather than silently changing its meaning based on syntax.
+    if (opt_key == "bed_exclude_area" && m_type == Preset::TYPE_PRINTER) {
+        const std::string *definition = boost::any_cast<std::string>(&value);
+        if (definition != nullptr && is_bed_exclusion_volume_syntax(*definition)) {
+            const double printable_height = m_config->opt_float("printable_height");
+            if (!is_valid_bed_exclude_volumes_string(*definition, printable_height)) {
+                show_error(wxGetApp().plater(), _L("Invalid exclusion volume format. Use XxY, XxY, ... or ZMIN..ZMAX;XxY, XxY, ... and separate multiple volumes with |."));
+                reload_config();
+                return;
+            }
+
+            MessageDialog dialog(
+                wxGetApp().plater(),
+                _L("This definition contains collision-volume syntax. Convert it to exclusion volumes and enable G-code checking and travel avoidance?"),
+                _L("Convert exclusion volumes"), wxICON_QUESTION | wxYES | wxNO);
+            if (dialog.ShowModal() == wxID_YES) {
+                DynamicPrintConfig converted = *m_config;
+                converted.set_key_value("bed_exclude_volumes", new ConfigOptionString(*definition));
+                converted.set_key_value("bed_exclude_volume_mode",
+                    new ConfigOptionEnum<BedExcludeVolumeMode>(BedExcludeVolumeMode::Shared));
+                converted.set_key_value("bed_exclude_area", new ConfigOptionPoints());
+                load_config(converted);
+                on_presets_changed();
+                wxGetApp().plater()->update();
+            } else {
+                reload_config();
+            }
+            return;
+        }
+    }
+
+    // Editing the dedicated collision-volume fields is an explicit opt-in to
+    // the new behaviour. Keep presets unambiguous by removing any legacy area;
+    // the resolver still gives volumes precedence when externally authored
+    // profiles contain both keys.
+    if (m_type == Preset::TYPE_PRINTER &&
+        (opt_key == "bed_exclude_volumes" || opt_key.rfind("extruder_bed_exclude_volumes#", 0) == 0)) {
+        const std::string *definition = boost::any_cast<std::string>(&value);
+        const ConfigOptionPoints *legacy = m_config->option<ConfigOptionPoints>("bed_exclude_area");
+        if (definition != nullptr && !definition->empty() && legacy != nullptr && !legacy->values.empty()) {
+            DynamicPrintConfig converted = *m_config;
+            converted.set_key_value("bed_exclude_area", new ConfigOptionPoints());
+            m_config_manipulation.apply(m_config, &converted);
+        }
+    }
+
     // Keep this preset's "plugins" manifest in sync when a plugin picker changes, so full_config() and
     // save_to_json() always find resolved "name;uuid;capability" references and rebuild it nowhere else.
     // Also drop any plugin config override entries for a capability the change just stopped
@@ -1827,21 +1875,20 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
             printer_tab->on_gcode_flavor_changed();
     }
 
-    if (opt_key == "bed_exclude_area_mode" && m_type == Preset::TYPE_PRINTER &&
-        m_config->opt_enum<BedExcludeAreaMode>("bed_exclude_area_mode") == BedExcludeAreaMode::PerExtruder) {
-        auto *per_extruder = m_config->option<ConfigOptionStrings>("extruder_bed_exclude_area");
-        const auto *shared = m_config->option<ConfigOptionPoints>("bed_exclude_area");
+    if (opt_key == "bed_exclude_volume_mode" && m_type == Preset::TYPE_PRINTER &&
+        m_config->opt_enum<BedExcludeVolumeMode>("bed_exclude_volume_mode") == BedExcludeVolumeMode::PerExtruder) {
+        auto *per_extruder = m_config->option<ConfigOptionStrings>("extruder_bed_exclude_volumes");
+        const auto *shared = m_config->option<ConfigOptionString>("bed_exclude_volumes");
         const size_t extruder_count = m_config->option<ConfigOptionFloats>("nozzle_diameter")->size();
         const bool definitions_empty = per_extruder == nullptr ||
             std::all_of(per_extruder->values.begin(), per_extruder->values.end(), [](const std::string &entry) { return entry.empty(); });
 
         if (definitions_empty && shared != nullptr && extruder_count > 0) {
-            const std::string serialized = shared->serialize();
-            const bool valid_shared_definition = shared->values.size() >= 3 ||
-                (has_bed_exclusion_volume_syntax(*shared) &&
-                 is_valid_bed_exclude_area_string(serialized, std::numeric_limits<double>::max()));
+            const std::string serialized = shared->value;
+            const bool valid_shared_definition =
+                is_valid_bed_exclude_volumes_string(serialized, std::numeric_limits<double>::max());
             DynamicPrintConfig new_conf = *m_config;
-            new_conf.set_key_value("extruder_bed_exclude_area",
+            new_conf.set_key_value("extruder_bed_exclude_volumes",
                 new ConfigOptionStrings(std::vector<std::string>(extruder_count, valid_shared_definition ? serialized : std::string{})));
             m_config_manipulation.apply(m_config, &new_conf);
         }
@@ -5023,10 +5070,44 @@ void TabPrinter::build_fff()
            return 	create_bed_shape_widget(parent);
         });
         optgroup->append_single_option_line("parallel_printheads_count");
-        optgroup->append_single_option_line("bed_exclude_area_mode");
         Option option = optgroup->get_option("bed_exclude_area");
         option.opt.full_width = true;
         optgroup->append_single_option_line(option, "printer_basic_information_printable_space#excluded-bed-area");
+        Line convert_exclusion_line = Line{ L("Collision checking"), L("Convert the legacy excluded bed area into a collision volume so Orca can check G-code moves and reroute travel around it.") };
+        convert_exclusion_line.widget = [this](wxWindow *parent) {
+            Button *button = new Button(parent, _L("Convert area to collision volume"));
+            button->Bind(wxEVT_BUTTON, [this](wxCommandEvent &) {
+                const ConfigOptionPoints *legacy = m_config->option<ConfigOptionPoints>("bed_exclude_area");
+                if (legacy == nullptr || legacy->values.size() < 3) {
+                    show_error(wxGetApp().plater(), _L("Configure a valid excluded bed area before converting it."));
+                    return;
+                }
+
+                const std::string definition = legacy->serialize();
+                MessageDialog dialog(
+                    wxGetApp().plater(),
+                    _L("Convert this legacy excluded bed area into a full-height collision volume? This enables G-code checking and travel avoidance."),
+                    _L("Convert exclusion volume"), wxICON_QUESTION | wxYES | wxNO);
+                if (dialog.ShowModal() != wxID_YES)
+                    return;
+
+                DynamicPrintConfig converted = *m_config;
+                converted.set_key_value("bed_exclude_volumes", new ConfigOptionString(definition));
+                converted.set_key_value("bed_exclude_volume_mode",
+                    new ConfigOptionEnum<BedExcludeVolumeMode>(BedExcludeVolumeMode::Shared));
+                converted.set_key_value("bed_exclude_area", new ConfigOptionPoints());
+                load_config(converted);
+                on_presets_changed();
+                wxGetApp().plater()->update();
+            });
+            return button;
+        };
+        optgroup->append_line(convert_exclusion_line);
+
+        Option volume_option = optgroup->get_option("bed_exclude_volumes");
+        volume_option.opt.full_width = true;
+        optgroup->append_single_option_line(volume_option);
+        optgroup->append_single_option_line("bed_exclude_volume_mode");
         // optgroup->append_single_option_line("printable_area");
         optgroup->append_single_option_line("printable_height", "printer_basic_information_printable_space#printable-height");
         optgroup->append_single_option_line("support_multi_bed_types","printer_basic_information_printable_space#support-multi-bed-types");
@@ -5660,7 +5741,7 @@ if (is_marlin_flavor)
             option.opt.full_width = true;
             optgroup->append_single_option_line(option, "printer_extruder_basic_information#extruder-offset-position");
 
-            Option exclusion_option = optgroup->get_option("extruder_bed_exclude_area", extruder_idx);
+            Option exclusion_option = optgroup->get_option("extruder_bed_exclude_volumes", extruder_idx);
             exclusion_option.opt.full_width = true;
             optgroup->append_single_option_line(exclusion_option, "printer_basic_information_printable_space#excluded-bed-area");
 
@@ -6092,9 +6173,11 @@ void TabPrinter::toggle_options()
         toggle_line("parallel_printheads_count", support_parallel_printheads);
 
         const size_t exclusion_extruder_count = m_preset_bundle->get_printer_extruder_count();
-        const BedExcludeAreaMode exclusion_mode = m_config->opt_enum<BedExcludeAreaMode>("bed_exclude_area_mode");
-        toggle_line("bed_exclude_area_mode", exclusion_extruder_count > 1);
-        toggle_line("bed_exclude_area", exclusion_extruder_count <= 1 || exclusion_mode != BedExcludeAreaMode::PerExtruder);
+        const bool collision_volumes_enabled = has_bed_exclude_volumes(*m_config);
+        const BedExcludeVolumeMode exclusion_mode = active_bed_exclude_volume_mode(*m_config);
+        toggle_option("bed_exclude_area", !collision_volumes_enabled);
+        toggle_line("bed_exclude_volume_mode", collision_volumes_enabled && exclusion_extruder_count > 1);
+        toggle_line("bed_exclude_volumes", exclusion_extruder_count <= 1 || exclusion_mode != BedExcludeVolumeMode::PerExtruder);
 
         toggle_line("fan_direction", m_config->opt_bool("auxiliary_fan"));
 
@@ -6153,8 +6236,9 @@ void TabPrinter::toggle_options()
 
         toggle_option("extruder_printable_area", false, i);          // disable
         toggle_line("extruder_printable_area", m_preset_bundle->get_printer_extruder_count() == 2, i);  //hide
-        const bool per_extruder_exclusions = m_config->opt_enum<BedExcludeAreaMode>("bed_exclude_area_mode") == BedExcludeAreaMode::PerExtruder;
-        toggle_line("extruder_bed_exclude_area", m_preset_bundle->get_printer_extruder_count() > 1 && per_extruder_exclusions, i);
+        const bool per_extruder_exclusions = has_bed_exclude_volumes(*m_config) &&
+            active_bed_exclude_volume_mode(*m_config) == BedExcludeVolumeMode::PerExtruder;
+        toggle_line("extruder_bed_exclude_volumes", m_preset_bundle->get_printer_extruder_count() > 1 && per_extruder_exclusions, i);
         toggle_option("extruder_printable_height", false, i);
         toggle_line("extruder_printable_height", m_preset_bundle->get_printer_extruder_count() == 2, i);
 

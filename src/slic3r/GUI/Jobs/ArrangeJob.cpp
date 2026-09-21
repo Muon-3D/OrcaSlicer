@@ -25,7 +25,7 @@ void set_arrange_polygon_bed_exclusion_extruders(ArrangePolygon &polygon, const 
                                                   const PartPlate &plate, const DynamicPrintConfig &config)
 {
     polygon.bed_exclusion_extruder_ids.clear();
-    if (config.opt_enum<BedExcludeAreaMode>("bed_exclude_area_mode") == BedExcludeAreaMode::Shared)
+    if (active_bed_exclude_volume_mode(config) == BedExcludeVolumeMode::Shared)
         return;
 
     const ConfigOptionFloats *nozzle_diameters = config.opt<ConfigOptionFloats>("nozzle_diameter");
@@ -57,7 +57,7 @@ static void set_arrange_polygon_bed_exclusion_extruders_for_all_plates(ArrangePo
                                                                        const DynamicPrintConfig &config)
 {
     polygon.bed_exclusion_extruder_ids.clear();
-    if (config.opt_enum<BedExcludeAreaMode>("bed_exclude_area_mode") == BedExcludeAreaMode::Shared)
+    if (active_bed_exclude_volume_mode(config) == BedExcludeVolumeMode::Shared)
         return;
 
     std::set<int> extruder_ids;

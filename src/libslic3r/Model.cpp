@@ -3105,7 +3105,7 @@ void Model::setPrintSpeedTable(const DynamicPrintConfig& config, const PrintConf
     //auto print_config = print.config();
     //printSpeedMap.bed_poly.points = get_bed_shape(*(wxGetApp().plater()->config()));
     printSpeedMap.bed_poly.points = get_bed_shape(config);
-    Pointfs excluse_area_points = has_bed_exclusion_volume_syntax(print_config.bed_exclude_area) ? Pointfs{} : print_config.bed_exclude_area.values;
+    Pointfs excluse_area_points = has_bed_exclude_volumes(print_config) ? Pointfs{} : print_config.bed_exclude_area.values;
     Polygons exclude_polys;
     Polygon exclude_poly;
     for (int i = 0; i < excluse_area_points.size(); i++) {

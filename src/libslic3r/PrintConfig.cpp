@@ -9,6 +9,8 @@
 
 #include "GCode/Thumbnails.hpp"
 #include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <iterator>
 #include <set>
 #include <optional>
@@ -641,12 +643,12 @@ static const t_config_enum_values s_keys_map_FilamentMapMode = {
 };
 CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(FilamentMapMode)
 
-static const t_config_enum_values s_keys_map_BedExcludeAreaMode = {
-    { "shared",          int(BedExcludeAreaMode::Shared) },
-    { "toolhead_offset", int(BedExcludeAreaMode::ToolheadOffset) },
-    { "per_extruder",    int(BedExcludeAreaMode::PerExtruder) }
+static const t_config_enum_values s_keys_map_BedExcludeVolumeMode = {
+    { "shared",          int(BedExcludeVolumeMode::Shared) },
+    { "toolhead_offset", int(BedExcludeVolumeMode::ToolheadOffset) },
+    { "per_extruder",    int(BedExcludeVolumeMode::PerExtruder) }
 };
-CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(BedExcludeAreaMode)
+CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(BedExcludeVolumeMode)
 
 // PrimeVolumeMode. Serialized string keys must stay stable; they round-trip through .3mf.
 static const t_config_enum_values s_keys_map_PrimeVolumeMode = {
@@ -882,29 +884,37 @@ void PrintConfigDef::init_common_params()
     def->mode     = comAdvanced;
     def->set_default_value(new ConfigOptionStrings());
 
-    def = this->add("bed_exclude_area_mode", coEnum);
-    def->label = L("Exclusion volume behaviour");
-    def->tooltip = L("Choose whether all nozzles use the same exclusion volumes, derive toolhead-relative volumes from each nozzle's XY offset, or configure independent volumes for every extruder.");
-    def->enum_keys_map = &ConfigOptionEnum<BedExcludeAreaMode>::get_enum_values();
-    def->enum_values = { "shared", "toolhead_offset", "per_extruder" };
-    def->enum_labels = { L("Shared"), L("Toolhead-relative (nozzle offsets)"), L("Individual per extruder") };
-    def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionEnum<BedExcludeAreaMode>(BedExcludeAreaMode::Shared));
-
     //BBS: add "bed_exclude_area"
     def = this->add("bed_exclude_area", coPoints);
-    def->label = L("Excluded bed area");
+    def->label = L("Excluded bed area (legacy)");
     def->tooltip = L("Unprintable area in XY plane. For example, X1 Series printers use the front left corner to cut filament during filament change. "
-        "The area is expressed as polygon by points in following format: \"XxY, XxY, ...\". "
-        "Use \"ZMIN..ZMAX;XxY, XxY, ...\" for a 3D Z-limited exclusion volume. "
-        "Separate multiple areas or volumes with \"|\". ");
+        "The area is expressed as a polygon in the format \"XxY, XxY, ...\". Legacy areas keep generated material and models out, "
+        "but do not check or reroute machine travel. Configure exclusion volumes below for full collision checking.");
     def->mode = comAdvanced;
     def->gui_type = ConfigOptionDef::GUIType::one_string;
     def->set_default_value(new ConfigOptionPoints{ Vec2d(0, 0) });
 
-    def = this->add("extruder_bed_exclude_area", coStrings);
+    def = this->add("bed_exclude_volumes", coString);
+    def->label = L("Exclusion volumes");
+    def->tooltip = L("Collision volumes used for model and generated-material exclusion, G-code checking, and travel avoidance. "
+        "Use \"XxY, XxY, ...\" for a full-height polygon or \"ZMIN..ZMAX;XxY, XxY, ...\" for a Z-limited volume. "
+        "Separate multiple volumes with \"|\". When configured, these volumes take precedence over the legacy excluded bed area.");
+    def->mode = comAdvanced;
+    def->gui_type = ConfigOptionDef::GUIType::one_string;
+    def->set_default_value(new ConfigOptionString());
+
+    def = this->add("bed_exclude_volume_mode", coEnum);
+    def->label = L("Exclusion volume behaviour");
+    def->tooltip = L("Choose whether all nozzles use the same exclusion volumes, derive toolhead-relative volumes from each nozzle's XY offset, or configure independent volumes for every extruder.");
+    def->enum_keys_map = &ConfigOptionEnum<BedExcludeVolumeMode>::get_enum_values();
+    def->enum_values = { "shared", "toolhead_offset", "per_extruder" };
+    def->enum_labels = { L("Shared"), L("Toolhead-relative (nozzle offsets)"), L("Individual per extruder") };
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionEnum<BedExcludeVolumeMode>(BedExcludeVolumeMode::Shared));
+
+    def = this->add("extruder_bed_exclude_volumes", coStrings);
     def->label = L("Extruder exclusion volumes");
-    def->tooltip = L("Exclusion volumes used only by this extruder in individual mode. Use the same polygon and optional Z-range format as the shared excluded bed area. Leave empty for no exclusion volumes on this extruder.");
+    def->tooltip = L("Collision volumes used only by this extruder in individual mode. Use the same polygon and optional Z-range format as the shared exclusion volumes. Leave empty for no exclusion volumes on this extruder.");
     def->mode = comAdvanced;
     def->gui_type = ConfigOptionDef::GUIType::one_string;
     def->set_default_value(new ConfigOptionStrings{ "" });
@@ -8236,7 +8246,7 @@ void PrintConfigDef::init_extruder_option_keys()
         "default_filament_profile",
         "default_nozzle_volume_type",
         "deretraction_speed",
-        "extruder_bed_exclude_area",
+        "extruder_bed_exclude_volumes",
         "extruder_colour",
         "extruder_offset",
         "extruder_printable_height",
@@ -9407,7 +9417,7 @@ std::set<std::string> printer_extruder_options = {
     "nozzle_diameter",
     "default_nozzle_volume_type",
     "extruder_printable_area",
-    "extruder_bed_exclude_area",
+    "extruder_bed_exclude_volumes",
     "extruder_printable_height",
     "min_layer_height",
     "max_layer_height",
@@ -11576,17 +11586,23 @@ std::map<std::string, std::string> validate(const FullPrintConfig &cfg, bool und
             break;
         }
 
-    if (cfg.bed_exclude_area_mode.value == BedExcludeAreaMode::ToolheadOffset &&
+    const bool collision_volumes_enabled = has_bed_exclude_volumes(cfg);
+    if (cfg.bed_exclude_volume_mode.value != BedExcludeVolumeMode::PerExtruder &&
+        !cfg.bed_exclude_volumes.value.empty() &&
+        !is_valid_bed_exclude_volumes_string(cfg.bed_exclude_volumes.value, cfg.printable_height.value)) {
+        error_message.emplace("bed_exclude_volumes", L("Invalid exclusion volume definition."));
+    }
+    if (collision_volumes_enabled && cfg.bed_exclude_volume_mode.value == BedExcludeVolumeMode::ToolheadOffset &&
         cfg.extruder_offset.size() < cfg.nozzle_diameter.size()) {
         error_message.emplace("extruder_offset", L("A nozzle offset is required for every extruder when toolhead-relative exclusion volumes are enabled."));
     }
-    if (cfg.bed_exclude_area_mode.value == BedExcludeAreaMode::PerExtruder) {
-        if (cfg.extruder_bed_exclude_area.size() < cfg.nozzle_diameter.size()) {
-            error_message.emplace("extruder_bed_exclude_area", L("An exclusion-volume entry is required for every extruder. An entry may be empty when that extruder has no exclusion volumes."));
+    if (collision_volumes_enabled && cfg.bed_exclude_volume_mode.value == BedExcludeVolumeMode::PerExtruder) {
+        if (cfg.extruder_bed_exclude_volumes.size() < cfg.nozzle_diameter.size()) {
+            error_message.emplace("extruder_bed_exclude_volumes", L("An exclusion-volume entry is required for every extruder. An entry may be empty when that extruder has no exclusion volumes."));
         } else {
-            for (const std::string &entry : cfg.extruder_bed_exclude_area.values) {
-                if (!is_valid_bed_exclude_area_string(entry, cfg.printable_height.value)) {
-                    error_message.emplace("extruder_bed_exclude_area", L("Invalid per-extruder exclusion volume definition."));
+            for (const std::string &entry : cfg.extruder_bed_exclude_volumes.values) {
+                if (!is_valid_bed_exclude_volumes_string(entry, cfg.printable_height.value)) {
+                    error_message.emplace("extruder_bed_exclude_volumes", L("Invalid per-extruder exclusion volume definition."));
                     break;
                 }
             }
@@ -12775,7 +12791,7 @@ Points get_bed_shape(const SLAPrinterConfig &cfg) { return to_points(make_counte
 
 namespace {
 
-static bool is_bed_exclusion_volume_syntax(const std::string &value)
+static bool looks_like_bed_exclusion_volume_syntax(const std::string &value)
 {
     return value.find('|') != std::string::npos || (value.find("..") != std::string::npos && value.find(';') != std::string::npos);
 }
@@ -12832,14 +12848,33 @@ static bool parse_z_range_token(
 
 static std::optional<Polygon> parse_exclude_polygon_points(const std::string &points_str)
 {
-    ConfigOptionPoints points;
-    if (! points.deserialize(points_str) || points.values.size() < 3)
+    Pointfs points;
+    std::vector<std::string> point_tokens;
+    boost::split(point_tokens, points_str, boost::is_any_of(","));
+    points.reserve(point_tokens.size());
+    for (std::string point_token : point_tokens) {
+        boost::trim(point_token);
+        const size_t separator = point_token.find('x');
+        if (separator == std::string::npos || point_token.find('x', separator + 1) != std::string::npos)
+            return std::nullopt;
+
+        double x = 0.0;
+        double y = 0.0;
+        if (!parse_double_token(point_token.substr(0, separator), x) ||
+            !parse_double_token(point_token.substr(separator + 1), y) ||
+            !std::isfinite(x) || !std::isfinite(y))
+            return std::nullopt;
+        points.emplace_back(x, y);
+    }
+    if (points.size() < 3)
         return std::nullopt;
 
     Polygon polygon;
-    polygon.points.reserve(points.values.size());
-    for (const Vec2d &pt : points.values)
+    polygon.points.reserve(points.size());
+    for (const Vec2d &pt : points)
         polygon.points.emplace_back(scale_(pt.x()), scale_(pt.y()));
+    if (polygon.area() == 0.0)
+        return std::nullopt;
     polygon.make_counter_clockwise();
     return polygon;
 }
@@ -12858,7 +12893,8 @@ static void append_legacy_bed_exclude_regions(
         polygon.points.emplace_back(scale_(pt.x()), scale_(pt.y()));
     polygon.make_counter_clockwise();
 
-    out.push_back({ std::move(polygon), 0.0, printable_height, false, false });
+    out.push_back({ std::move(polygon), 0.0, printable_height,
+                    BedExcludeRegion::Purpose::MaterialKeepout, false });
 }
 
 static void append_bed_exclusion_volume_regions(
@@ -12921,50 +12957,54 @@ static void append_bed_exclusion_volume_regions(
         if (! polygon)
             continue;
 
-        out.push_back({ std::move(*polygon), z_min, z_max, true, has_z_range });
+        out.push_back({ std::move(*polygon), z_min, z_max,
+                        BedExcludeRegion::Purpose::CollisionVolume, has_z_range });
     }
 }
 
-static std::vector<BedExcludeRegion> get_bed_excluded_regions_impl(
+static bool has_nonempty_string(const std::string &value)
+{
+    return std::any_of(value.begin(), value.end(), [](const char c) { return !std::isspace(static_cast<unsigned char>(c)); });
+}
+
+static bool collision_volumes_configured(
+    const std::string &shared_specs,
+    const BedExcludeVolumeMode mode,
+    const std::vector<std::string> &per_extruder_specs)
+{
+    if (mode == BedExcludeVolumeMode::PerExtruder)
+        return std::any_of(per_extruder_specs.begin(), per_extruder_specs.end(), has_nonempty_string);
+    return has_nonempty_string(shared_specs);
+}
+
+static std::vector<BedExcludeRegion> parse_master_bed_excluded_regions(
     const Pointfs &legacy_points,
-    const std::string &region_specs,
+    const std::string &shared_specs,
+    const bool use_collision_volumes,
     const double printable_height)
 {
     std::vector<BedExcludeRegion> regions;
     const double height = std::max(0.0, printable_height);
-    append_legacy_bed_exclude_regions(regions, legacy_points, height);
-    append_bed_exclusion_volume_regions(regions, region_specs, height);
+    if (use_collision_volumes)
+        append_bed_exclusion_volume_regions(regions, shared_specs, height);
+    else
+        append_legacy_bed_exclude_regions(regions, legacy_points, height);
     return regions;
-}
-
-static std::vector<BedExcludeRegion> parse_master_bed_excluded_regions(
-    const ConfigOptionPoints *option,
-    const double printable_height)
-{
-    if (option == nullptr)
-        return {};
-
-    const std::string serialized = option->serialize();
-    const bool volume_syntax = is_bed_exclusion_volume_syntax(serialized);
-    return get_bed_excluded_regions_impl(
-        volume_syntax ? Pointfs{} : option->values,
-        volume_syntax ? serialized : std::string{},
-        printable_height);
 }
 
 static std::vector<BedExcludeRegion> resolve_bed_excluded_regions(
     const std::vector<BedExcludeRegion> &master_regions,
-    const BedExcludeAreaMode mode,
+    const BedExcludeVolumeMode mode,
     const std::vector<std::string> &per_extruder_specs,
     const std::vector<Vec2d> &extruder_offsets,
     const size_t reference_extruder,
     const size_t extruder_id,
     const double printable_height)
 {
-    if (mode == BedExcludeAreaMode::Shared)
+    if (mode == BedExcludeVolumeMode::Shared)
         return master_regions;
 
-    if (mode == BedExcludeAreaMode::PerExtruder) {
+    if (mode == BedExcludeVolumeMode::PerExtruder) {
         if (extruder_id >= per_extruder_specs.size() || per_extruder_specs[extruder_id].empty())
             return {};
 
@@ -12997,12 +13037,12 @@ static size_t bed_exclusion_extruder_count(
 }
 
 static std::vector<BedExcludeRegion> flatten_bed_excluded_regions(
-    const BedExcludeAreaMode mode,
+    const BedExcludeVolumeMode mode,
     std::vector<std::vector<BedExcludeRegion>> regions_by_extruder)
 {
     if (regions_by_extruder.empty())
         return {};
-    if (mode == BedExcludeAreaMode::Shared)
+    if (mode == BedExcludeVolumeMode::Shared)
         return std::move(regions_by_extruder.front());
 
     size_t total = 0;
@@ -13046,17 +13086,22 @@ std::vector<std::vector<BedExcludeRegion>> get_bed_excluded_regions_by_extruder(
 {
     const ConfigOptionFloat *height_option = cfg.opt<ConfigOptionFloat>("printable_height");
     const double printable_height = height_option != nullptr ? height_option->value : 0.0;
-    const std::vector<BedExcludeRegion> master_regions = parse_master_bed_excluded_regions(
-        cfg.opt<ConfigOptionPoints>("bed_exclude_area"), printable_height);
-
-    const BedExcludeAreaMode mode = cfg.has("bed_exclude_area_mode") ?
-        cfg.opt_enum<BedExcludeAreaMode>("bed_exclude_area_mode") : BedExcludeAreaMode::Shared;
-    const ConfigOptionStrings *per_extruder_option = cfg.opt<ConfigOptionStrings>("extruder_bed_exclude_area");
+    const ConfigOptionPoints *legacy_option = cfg.opt<ConfigOptionPoints>("bed_exclude_area");
+    const ConfigOptionString *shared_option = cfg.opt<ConfigOptionString>("bed_exclude_volumes");
+    const BedExcludeVolumeMode configured_mode = cfg.has("bed_exclude_volume_mode") ?
+        cfg.opt_enum<BedExcludeVolumeMode>("bed_exclude_volume_mode") : BedExcludeVolumeMode::Shared;
+    const ConfigOptionStrings *per_extruder_option = cfg.opt<ConfigOptionStrings>("extruder_bed_exclude_volumes");
     const ConfigOptionPoints *offset_option = cfg.opt<ConfigOptionPoints>("extruder_offset");
     const ConfigOptionFloats *nozzle_option = cfg.opt<ConfigOptionFloats>("nozzle_diameter");
     const ConfigOptionInt *reference_option = cfg.opt<ConfigOptionInt>("master_extruder_id");
 
+    const Pointfs legacy_points = legacy_option != nullptr ? legacy_option->values : Pointfs{};
+    const std::string shared_specs = shared_option != nullptr ? shared_option->value : std::string{};
     const std::vector<std::string> per_extruder_specs = per_extruder_option != nullptr ? per_extruder_option->values : std::vector<std::string>{};
+    const bool use_collision_volumes = collision_volumes_configured(shared_specs, configured_mode, per_extruder_specs);
+    const BedExcludeVolumeMode active_mode = use_collision_volumes ? configured_mode : BedExcludeVolumeMode::Shared;
+    const std::vector<BedExcludeRegion> master_regions = parse_master_bed_excluded_regions(
+        legacy_points, shared_specs, use_collision_volumes, printable_height);
     const std::vector<Vec2d> offsets = offset_option != nullptr ? offset_option->values : std::vector<Vec2d>{};
     const size_t count = bed_exclusion_extruder_count(
         nozzle_option != nullptr ? nozzle_option->size() : 0,
@@ -13066,23 +13111,29 @@ std::vector<std::vector<BedExcludeRegion>> get_bed_excluded_regions_by_extruder(
     std::vector<std::vector<BedExcludeRegion>> result;
     result.reserve(count);
     for (size_t extruder_id = 0; extruder_id < count; ++extruder_id)
-        result.emplace_back(resolve_bed_excluded_regions(master_regions, mode, per_extruder_specs, offsets, reference, extruder_id, printable_height));
+        result.emplace_back(resolve_bed_excluded_regions(master_regions, active_mode, per_extruder_specs, offsets, reference, extruder_id, printable_height));
     return result;
 }
 
 std::vector<std::vector<BedExcludeRegion>> get_bed_excluded_regions_by_extruder(const PrintConfig &cfg)
 {
     const double printable_height = cfg.printable_height.value;
-    const std::vector<BedExcludeRegion> master_regions = parse_master_bed_excluded_regions(&cfg.bed_exclude_area, printable_height);
+    const bool use_collision_volumes = collision_volumes_configured(
+        cfg.bed_exclude_volumes.value, cfg.bed_exclude_volume_mode.value,
+        cfg.extruder_bed_exclude_volumes.values);
+    const BedExcludeVolumeMode active_mode = use_collision_volumes ?
+        cfg.bed_exclude_volume_mode.value : BedExcludeVolumeMode::Shared;
+    const std::vector<BedExcludeRegion> master_regions = parse_master_bed_excluded_regions(
+        cfg.bed_exclude_area.values, cfg.bed_exclude_volumes.value, use_collision_volumes, printable_height);
     const size_t count = bed_exclusion_extruder_count(
-        cfg.nozzle_diameter.size(), cfg.extruder_offset.size(), cfg.extruder_bed_exclude_area.size());
+        cfg.nozzle_diameter.size(), cfg.extruder_offset.size(), cfg.extruder_bed_exclude_volumes.size());
     const size_t reference = cfg.master_extruder_id.value > 0 ? size_t(cfg.master_extruder_id.value - 1) : 0;
 
     std::vector<std::vector<BedExcludeRegion>> result;
     result.reserve(count);
     for (size_t extruder_id = 0; extruder_id < count; ++extruder_id) {
         result.emplace_back(resolve_bed_excluded_regions(
-            master_regions, cfg.bed_exclude_area_mode.value, cfg.extruder_bed_exclude_area.values,
+            master_regions, active_mode, cfg.extruder_bed_exclude_volumes.values,
             cfg.extruder_offset.values, reference, extruder_id, printable_height));
     }
     return result;
@@ -13102,22 +13153,20 @@ std::vector<BedExcludeRegion> get_bed_excluded_regions(const PrintConfig &cfg, c
 
 std::vector<BedExcludeRegion> get_bed_excluded_regions(const DynamicPrintConfig &cfg)
 {
-    const BedExcludeAreaMode mode = cfg.has("bed_exclude_area_mode") ?
-        cfg.opt_enum<BedExcludeAreaMode>("bed_exclude_area_mode") : BedExcludeAreaMode::Shared;
-    return flatten_bed_excluded_regions(mode, get_bed_excluded_regions_by_extruder(cfg));
+    return flatten_bed_excluded_regions(active_bed_exclude_volume_mode(cfg), get_bed_excluded_regions_by_extruder(cfg));
 }
 
 std::vector<BedExcludeRegion> get_bed_excluded_regions(const PrintConfig &cfg)
 {
-    return flatten_bed_excluded_regions(cfg.bed_exclude_area_mode.value, get_bed_excluded_regions_by_extruder(cfg));
+    return flatten_bed_excluded_regions(active_bed_exclude_volume_mode(cfg), get_bed_excluded_regions_by_extruder(cfg));
 }
 
-bool has_bed_exclusion_volume_syntax(const ConfigOptionPoints& bed_exclude_area)
+bool is_bed_exclusion_volume_syntax(const std::string &value)
 {
-    return is_bed_exclusion_volume_syntax(bed_exclude_area.serialize());
+    return looks_like_bed_exclusion_volume_syntax(value);
 }
 
-bool is_valid_bed_exclude_area_string(const std::string &value, const double printable_height)
+bool is_valid_bed_exclude_volumes_string(const std::string &value, const double printable_height)
 {
     if (value.empty())
         return true;
@@ -13136,6 +13185,36 @@ bool is_valid_bed_exclude_area_string(const std::string &value, const double pri
             return false;
     }
     return found_nonempty;
+}
+
+bool has_bed_exclude_volumes(const DynamicPrintConfig &cfg)
+{
+    const ConfigOptionString *shared = cfg.opt<ConfigOptionString>("bed_exclude_volumes");
+    const ConfigOptionStrings *per_extruder = cfg.opt<ConfigOptionStrings>("extruder_bed_exclude_volumes");
+    const BedExcludeVolumeMode mode = cfg.has("bed_exclude_volume_mode") ?
+        cfg.opt_enum<BedExcludeVolumeMode>("bed_exclude_volume_mode") : BedExcludeVolumeMode::Shared;
+    return collision_volumes_configured(
+        shared != nullptr ? shared->value : std::string{}, mode,
+        per_extruder != nullptr ? per_extruder->values : std::vector<std::string>{});
+}
+
+bool has_bed_exclude_volumes(const PrintConfig &cfg)
+{
+    return collision_volumes_configured(
+        cfg.bed_exclude_volumes.value, cfg.bed_exclude_volume_mode.value,
+        cfg.extruder_bed_exclude_volumes.values);
+}
+
+BedExcludeVolumeMode active_bed_exclude_volume_mode(const DynamicPrintConfig &cfg)
+{
+    if (!has_bed_exclude_volumes(cfg) || !cfg.has("bed_exclude_volume_mode"))
+        return BedExcludeVolumeMode::Shared;
+    return cfg.opt_enum<BedExcludeVolumeMode>("bed_exclude_volume_mode");
+}
+
+BedExcludeVolumeMode active_bed_exclude_volume_mode(const PrintConfig &cfg)
+{
+    return has_bed_exclude_volumes(cfg) ? cfg.bed_exclude_volume_mode.value : BedExcludeVolumeMode::Shared;
 }
 
 Polygons get_bed_excluded_area(const PrintConfig& cfg)

@@ -120,7 +120,7 @@ size_t count_opt_key(const std::vector<StringObjectException>& warnings, const s
 }
 
 DynamicPrintConfig dual_extruder_exclusion_config(
-    BedExcludeAreaMode mode,
+    BedExcludeVolumeMode mode,
     const std::vector<std::string> &per_extruder,
     const std::vector<int> &filament_map = {1})
 {
@@ -129,8 +129,8 @@ DynamicPrintConfig dual_extruder_exclusion_config(
     config.set_key_value("nozzle_diameter", new ConfigOptionFloats{0.4, 0.4});
     config.set_key_value("extruder_offset", new ConfigOptionPoints{Vec2d::Zero(), Vec2d(20.0, 0.0)});
     config.set_key_value("extruder_printable_height", new ConfigOptionFloatsNullable{256.0, 256.0});
-    config.set_key_value("bed_exclude_area_mode", new ConfigOptionEnum<BedExcludeAreaMode>(mode));
-    config.set_key_value("extruder_bed_exclude_area", new ConfigOptionStrings(per_extruder));
+    config.set_key_value("bed_exclude_volume_mode", new ConfigOptionEnum<BedExcludeVolumeMode>(mode));
+    config.set_key_value("extruder_bed_exclude_volumes", new ConfigOptionStrings(per_extruder));
     config.set_key_value("filament_map_mode", new ConfigOptionEnum<FilamentMapMode>(fmmManual));
     config.set_key_value("filament_map", new ConfigOptionInts(filament_map));
     return config;
@@ -185,21 +185,21 @@ TEST_CASE("Print validation applies individual exclusion volumes to the mapped p
 
     SECTION("mapped colliding extruder is rejected") {
         const DynamicPrintConfig config = dual_extruder_exclusion_config(
-            BedExcludeAreaMode::PerExtruder, {colliding, ""}, {1});
+            BedExcludeVolumeMode::PerExtruder, {colliding, ""}, {1});
         const StringObjectException error = validate_cubes(config, warnings);
         CHECK(error.string.find("extruder 1") != std::string::npos);
     }
 
     SECTION("mapped clear extruder is accepted") {
         const DynamicPrintConfig config = dual_extruder_exclusion_config(
-            BedExcludeAreaMode::PerExtruder, {colliding, ""}, {2});
+            BedExcludeVolumeMode::PerExtruder, {colliding, ""}, {2});
         const StringObjectException error = validate_cubes(config, warnings);
         CHECK(error.string.empty());
     }
 
     SECTION("an unrelated nozzle exclusion does not reject the object") {
         const DynamicPrintConfig config = dual_extruder_exclusion_config(
-            BedExcludeAreaMode::PerExtruder, {"", colliding}, {1});
+            BedExcludeVolumeMode::PerExtruder, {"", colliding}, {1});
         const StringObjectException error = validate_cubes(config, warnings);
         CHECK(error.string.empty());
     }
@@ -210,25 +210,36 @@ TEST_CASE("Print validation applies shared exclusions and ignores volumes above 
     std::vector<StringObjectException> warnings;
 
     SECTION("shared volume intersects") {
-        DynamicPrintConfig config = dual_extruder_exclusion_config(BedExcludeAreaMode::Shared, {"", ""}, {2});
-        config.set_deserialize_strict("bed_exclude_area", "0..30;-100x-100,300x-100,300x300,-100x300");
+        DynamicPrintConfig config = dual_extruder_exclusion_config(BedExcludeVolumeMode::Shared, {"", ""}, {2});
+        config.set_key_value("bed_exclude_volumes", new ConfigOptionString("0..30;-100x-100,300x-100,300x300,-100x300"));
         const StringObjectException error = validate_cubes(config, warnings);
         CHECK(error.string.find("extruder 2") != std::string::npos);
     }
 
     SECTION("elevated shared volume clears a 20mm cube") {
-        DynamicPrintConfig config = dual_extruder_exclusion_config(BedExcludeAreaMode::Shared, {"", ""}, {1});
-        config.set_deserialize_strict("bed_exclude_area", "30..50;-100x-100,300x-100,300x300,-100x300");
+        DynamicPrintConfig config = dual_extruder_exclusion_config(BedExcludeVolumeMode::Shared, {"", ""}, {1});
+        config.set_key_value("bed_exclude_volumes", new ConfigOptionString("30..50;-100x-100,300x-100,300x300,-100x300"));
         const StringObjectException error = validate_cubes(config, warnings);
         CHECK(error.string.empty());
     }
+}
+
+TEST_CASE("Legacy excluded areas retain object placement validation", "[Print][ExclusionVolume][Compatibility]")
+{
+    DynamicPrintConfig config = dual_extruder_exclusion_config(
+        BedExcludeVolumeMode::Shared, {"", ""}, {1});
+    config.set_deserialize_strict("bed_exclude_area", "-100x-100,300x-100,300x300,-100x300");
+
+    std::vector<StringObjectException> warnings;
+    const StringObjectException error = validate_cubes(config, warnings);
+    CHECK_FALSE(error.string.empty());
 }
 
 TEST_CASE("Print validation checks every nozzle used by a multimaterial object", "[Print][ExclusionVolume][MultiNozzle]")
 {
     const std::string colliding = "0..256;-100x-100,300x-100,300x300,-100x300";
     const DynamicPrintConfig config = dual_extruder_exclusion_config(
-        BedExcludeAreaMode::PerExtruder, {"", colliding}, {1, 2});
+        BedExcludeVolumeMode::PerExtruder, {"", colliding}, {1, 2});
 
     const StringObjectException error = validate_multimaterial_cube(config);
     CHECK(error.string.find("extruder 2") != std::string::npos);

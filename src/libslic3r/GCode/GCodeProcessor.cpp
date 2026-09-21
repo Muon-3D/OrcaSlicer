@@ -20,6 +20,8 @@
 
 #include <float.h>
 #include <assert.h>
+#include <array>
+#include <cctype>
 #include <regex>
 #include <sstream>
 #include <charconv>
@@ -3176,7 +3178,7 @@ void GCodeProcessor::apply_config(const DynamicPrintConfig& config)
 
     //BBS: add bed_exclude_area
     const ConfigOptionPoints* bed_exclude_area = config.option<ConfigOptionPoints>("bed_exclude_area");
-    if (bed_exclude_area != nullptr && !has_bed_exclusion_volume_syntax(*bed_exclude_area))
+    if (bed_exclude_area != nullptr && !has_bed_exclude_volumes(config))
         m_result.bed_exclude_area = bed_exclude_area->values;
 
     const ConfigOptionPoints* wrapping_exclude_area = config.option<ConfigOptionPoints>("wrapping_exclude_area");
@@ -6115,22 +6117,56 @@ void GCodeProcessor::process_G23(const GCodeReader::GCodeLine& line)
     store_move_vertex(EMoveType::Unretract);
 }
 
+static std::array<bool, 3> g28_homed_axes(const GCodeReader::GCodeLine &line)
+{
+    std::array<bool, 3> homed { false, false, false };
+    std::string_view raw = line.raw();
+    const size_t command_end = raw.find_first_of(" \t;");
+    size_t pos = command_end == std::string_view::npos ? raw.size() : command_end;
+
+    while (pos < raw.size()) {
+        pos = raw.find_first_not_of(" \t", pos);
+        if (pos == std::string_view::npos || raw[pos] == ';')
+            break;
+        const size_t end = raw.find_first_of(" \t;", pos);
+        const std::string_view word = raw.substr(pos, end == std::string_view::npos ? raw.size() - pos : end - pos);
+
+        const bool compact_axes = !word.empty() && std::all_of(word.begin(), word.end(), [](const char c) {
+            const char upper = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            return upper == 'X' || upper == 'Y' || upper == 'Z';
+        });
+        if (compact_axes) {
+            for (const char c : word)
+                homed[static_cast<size_t>(std::toupper(static_cast<unsigned char>(c)) - 'X')] = true;
+        } else if (!word.empty()) {
+            const char axis = static_cast<char>(std::toupper(static_cast<unsigned char>(word.front())));
+            const bool numeric_axis_word = word.size() > 1 &&
+                (std::isdigit(static_cast<unsigned char>(word[1])) || word[1] == '+' || word[1] == '-' || word[1] == '.');
+            if (axis >= 'X' && axis <= 'Z' && numeric_axis_word)
+                homed[static_cast<size_t>(axis - 'X')] = true;
+        }
+
+        if (end == std::string_view::npos || raw[end] == ';')
+            break;
+        pos = end;
+    }
+    return homed;
+}
+
 void GCodeProcessor::process_G28(const GCodeReader::GCodeLine& line)
 {
     std::string_view cmd = line.cmd();
     std::string new_line_raw = { cmd.data(), cmd.size() };
-    bool found = false;
-    if (line.has('X')) {
+    const std::array<bool, 3> homed = g28_homed_axes(line);
+    const bool found = std::any_of(homed.begin(), homed.end(), [](const bool value) { return value; });
+    if (homed[X]) {
         new_line_raw += " X0";
-        found = true;
     }
-    if (line.has('Y')) {
+    if (homed[Y]) {
         new_line_raw += " Y0";
-        found = true;
     }
-    if (line.has('Z')) {
+    if (homed[Z]) {
         new_line_raw += " Z0";
-        found = true;
     }
     if (!found)
         new_line_raw += " X0  Y0  Z0";
@@ -6146,7 +6182,7 @@ void GCodeProcessor::process_G28(const GCodeReader::GCodeLine& line)
     // zero. Wait for a subsequent explicit absolute coordinate before checking
     // a path from any homed axis.
     for (unsigned char axis = X; axis <= Z; ++axis) {
-        if (!found || line.has(static_cast<Axis>(axis))) {
+        if (!found || homed[axis]) {
             m_axis_position_known[axis] = false;
             m_axis_origin_known[axis] = true;
         }

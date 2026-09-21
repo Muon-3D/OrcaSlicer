@@ -1093,7 +1093,7 @@ void PartPlate::render_exclude_area(bool force_default_color) {
     // the other extruders' regions hollow.
     const DynamicPrintConfig *config = m_plater != nullptr ? m_plater->config() : nullptr;
     if (config != nullptr &&
-        config->opt_enum<BedExcludeAreaMode>("bed_exclude_area_mode") != BedExcludeAreaMode::Shared)
+        active_bed_exclude_volume_mode(*config) != BedExcludeVolumeMode::Shared)
         return;
 
 	ColorRGBA select_color{   .9f, .86f, .82f, .7f }; // ORCA
@@ -1164,7 +1164,7 @@ std::string PartPlate::exclusion_volume_preview_cache_key(const std::vector<BedE
     key << "regions:" << regions.size() << ';';
     for (const BedExcludeRegion &region : regions) {
         key << region.z_min << ".." << region.z_max << ':'
-            << region.from_3d_config << ':' << region.has_z_range << ':'
+            << int(region.purpose) << ':' << region.has_z_range << ':'
             << region.polygon.points.size();
         for (const Point &point : region.polygon.points)
             key << ',' << point.x() << 'x' << point.y();
@@ -1235,12 +1235,12 @@ void PartPlate::update_exclusion_volume_preview_models()
     std::vector<BedExcludeRegion> regions;
     for (const std::vector<BedExcludeRegion> &extruder_regions : regions_by_extruder)
         regions.insert(regions.end(), extruder_regions.begin(), extruder_regions.end());
-    const BedExcludeAreaMode mode = config->opt_enum<BedExcludeAreaMode>("bed_exclude_area_mode");
+    const BedExcludeVolumeMode mode = active_bed_exclude_volume_mode(*config);
     // A coloured border communicates which physical nozzle owns a footprint.
     // With only one nozzle the exclusion applies to every filament, so using
     // the first filament colour would incorrectly imply material ownership.
     const bool show_nozzle_ownership =
-        regions_by_extruder.size() > 1 && mode != BedExcludeAreaMode::Shared;
+        regions_by_extruder.size() > 1 && mode != BedExcludeVolumeMode::Shared;
     std::ostringstream grouped_key;
     grouped_key << exclusion_volume_preview_cache_key(regions) << "mode:" << int(mode) << ";groups:";
     for (const std::vector<BedExcludeRegion> &group : regions_by_extruder)
@@ -1345,7 +1345,7 @@ void PartPlate::update_exclusion_volume_preview_models()
     for (size_t extruder_id = 0; extruder_id < regions_by_extruder.size(); ++extruder_id) {
         // Shared regions are identical for every nozzle. Keeping one copy
         // avoids duplicate floor, prism and intersection geometry.
-        if (mode == BedExcludeAreaMode::Shared && extruder_id > 0)
+        if (mode == BedExcludeVolumeMode::Shared && extruder_id > 0)
             break;
 
         for (const BedExcludeRegion &region_src : regions_by_extruder[extruder_id]) {
@@ -1360,7 +1360,7 @@ void PartPlate::update_exclusion_volume_preview_models()
             // In non-shared modes these resolved regions are the authoritative bed
             // preview, including legacy master polygons duplicated by nozzle offset.
             // Shared legacy polygons continue to use m_exclude_triangles above.
-            if (region_src.from_3d_config || mode != BedExcludeAreaMode::Shared) {
+            if (region_src.is_collision_volume() || mode != BedExcludeVolumeMode::Shared) {
                 if (!region_src.has_z_range || region_src.z_min <= EPSILON) {
                     floor_regions.emplace_back(region);
                 } else {
@@ -1400,7 +1400,7 @@ void PartPlate::update_exclusion_volume_preview_models()
                 continue;
 
             std::set<size_t> relevant_extruders;
-            if (mode != BedExcludeAreaMode::Shared) {
+            if (mode != BedExcludeVolumeMode::Shared) {
                 for (const auto &mapping : get_object_filament_extruders(
                          *object, project_config, regions_by_extruder.size()))
                     relevant_extruders.emplace(mapping.second);
@@ -1409,7 +1409,7 @@ void PartPlate::update_exclusion_volume_preview_models()
             Polygon hull = instance->convex_hull_2d();
             const BoundingBoxf3 instance_box = object->instance_convex_hull_bounding_box(instance_id);
             for (const PreviewRegion &preview_region : preview_regions) {
-                if (mode != BedExcludeAreaMode::Shared &&
+                if (mode != BedExcludeVolumeMode::Shared &&
                     relevant_extruders.find(preview_region.extruder_id) == relevant_extruders.end())
                     continue;
 
@@ -3457,16 +3457,16 @@ bool PartPlate::check_outside(int obj_id, int instance_id, BoundingBoxf3* boundi
         if (config != nullptr) {
             const std::vector<std::vector<BedExcludeRegion>> regions_by_extruder =
                 get_bed_excluded_regions_by_extruder(*config);
-            const BedExcludeAreaMode mode = config->opt_enum<BedExcludeAreaMode>("bed_exclude_area_mode");
+            const BedExcludeVolumeMode mode = active_bed_exclude_volume_mode(*config);
             // The legacy outside flag has no filament/nozzle context. Keep it
             // authoritative for the shared mode, but let the newer per-extruder
             // placement pipeline handle offset/individual modes so a collision
             // belonging to an unused nozzle does not block the whole plate.
-            checked_config_regions = mode != BedExcludeAreaMode::Shared;
+            checked_config_regions = mode != BedExcludeVolumeMode::Shared;
             const Point plate_offset(scale_(m_origin.x()), scale_(m_origin.y()));
             Polygon hull = instance->convex_hull_2d();
 
-            const size_t groups_to_check = mode == BedExcludeAreaMode::Shared && !regions_by_extruder.empty() ? 1 : 0;
+            const size_t groups_to_check = mode == BedExcludeVolumeMode::Shared && !regions_by_extruder.empty() ? 1 : 0;
             for (size_t group_id = 0; group_id < groups_to_check; ++group_id) {
                 const std::vector<BedExcludeRegion> &extruder_regions = regions_by_extruder[group_id];
                 checked_config_regions = checked_config_regions || !extruder_regions.empty();
@@ -6492,15 +6492,13 @@ bool PartPlateList::preprocess_exclude_areas(arrangement::ArrangePolygons &unsel
 		}
 		added = true;
 	}
-    const BedExcludeAreaMode mode = config.opt_enum<BedExcludeAreaMode>("bed_exclude_area_mode");
-    const ConfigOptionPoints *configured_areas = config.opt<ConfigOptionPoints>("bed_exclude_area");
-    const bool use_resolved_regions = mode != BedExcludeAreaMode::Shared ||
-        (configured_areas != nullptr && has_bed_exclusion_volume_syntax(*configured_areas));
+    const BedExcludeVolumeMode mode = active_bed_exclude_volume_mode(config);
+    const bool use_resolved_regions = has_bed_exclude_volumes(config);
 
     if (use_resolved_regions) {
         const std::vector<std::vector<BedExcludeRegion>> regions_by_extruder =
             get_bed_excluded_regions_by_extruder(config);
-        const size_t extruder_count = mode == BedExcludeAreaMode::Shared ?
+        const size_t extruder_count = mode == BedExcludeVolumeMode::Shared ?
             std::min<size_t>(1, regions_by_extruder.size()) : regions_by_extruder.size();
 
         for (size_t extruder_id = 0; extruder_id < extruder_count; ++extruder_id) {
@@ -6517,7 +6515,7 @@ bool PartPlateList::preprocess_exclude_areas(arrangement::ArrangePolygons &unsel
                     blocker.rotation = 0.0;
                     blocker.is_virt_object = true;
                     blocker.is_bed_exclusion = true;
-                    blocker.bed_exclusion_extruder_id = mode == BedExcludeAreaMode::Shared ? -1 : int(extruder_id);
+                    blocker.bed_exclusion_extruder_id = mode == BedExcludeVolumeMode::Shared ? -1 : int(extruder_id);
                     blocker.bed_idx = plate_idx;
                     blocker.height = std::max(0.0, region.z_max - region.z_min);
                     blocker.z_min = region.z_min;

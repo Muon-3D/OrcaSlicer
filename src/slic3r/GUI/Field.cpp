@@ -684,9 +684,9 @@ void Field::get_value_by_opt_type(wxString& str, const bool check_value/* = true
                 m_value = into_u8(str);
             }
             break;
-        } else if (m_opt.opt_key == "extruder_bed_exclude_area") {
+        } else if (m_opt.opt_key == "bed_exclude_volumes" || m_opt.opt_key == "extruder_bed_exclude_volumes") {
             const std::string definition = into_u8(str);
-            if (!is_valid_bed_exclude_area_string(definition, std::numeric_limits<double>::max())) {
+            if (!is_valid_bed_exclude_volumes_string(definition, std::numeric_limits<double>::max())) {
                 show_error(m_parent, _L("Invalid exclusion volume format. Use XxY, XxY, ... or ZMIN..ZMAX;XxY, XxY, ... and separate multiple volumes with |."));
                 const std::string old_value = m_value.empty() ? std::string{} : boost::any_cast<std::string>(m_value);
                 set_value(from_u8(old_value), true);
@@ -784,7 +784,7 @@ void Field::get_value_by_opt_type(wxString& str, const bool check_value/* = true
                 if (!m_value.empty() && boost::any_cast<std::vector<Vec2d>>(&m_value) != nullptr)
                     text_value = get_thumbnails_string(boost::any_cast<std::vector<Vec2d>>(m_value));
                 set_value(text_value, true);
-                show_error(m_parent, format_wxstr(_L("Invalid format. Expected vector format: \"%1%\""), m_opt_id == "bed_exclude_area" ? "XxY, XxY, ... or ZMIN..ZMAX;XxY, XxY, ..." : "XxY, XxY, ..."));
+                show_error(m_parent, format_wxstr(_L("Invalid format. Expected vector format: \"%1%\""), "XxY, XxY, ..."));
             }
         }
 

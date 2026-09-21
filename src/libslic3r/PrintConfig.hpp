@@ -532,7 +532,7 @@ enum FilamentMapMode {
 
 // Defines how bed exclusion volumes are resolved for printers with multiple
 // independently positioned nozzles/toolheads.
-enum class BedExcludeAreaMode {
+enum class BedExcludeVolumeMode {
     Shared = 0,
     ToolheadOffset,
     PerExtruder
@@ -1765,9 +1765,10 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionInt,                parallel_printheads_count))
     ((ConfigOptionStrings,            parallel_printheads_bed_exclude_areas))
     //BBS: add bed_exclude_area
-    ((ConfigOptionEnum<BedExcludeAreaMode>, bed_exclude_area_mode))
     ((ConfigOptionPoints,             bed_exclude_area))
-    ((ConfigOptionStrings,            extruder_bed_exclude_area))
+    ((ConfigOptionString,             bed_exclude_volumes))
+    ((ConfigOptionEnum<BedExcludeVolumeMode>, bed_exclude_volume_mode))
+    ((ConfigOptionStrings,            extruder_bed_exclude_volumes))
     ((ConfigOptionPoints,             head_wrap_detect_zone))
     // BBS
     ((ConfigOptionString,             bed_custom_texture))
@@ -2314,11 +2315,18 @@ Points get_bed_shape(const DynamicPrintConfig &cfg, bool use_share = true);
 Points get_bed_shape(const PrintConfig &cfg, bool use_share = false);
 Points get_bed_shape(const SLAPrinterConfig &cfg);
 struct BedExcludeRegion {
+    enum class Purpose {
+        MaterialKeepout,
+        CollisionVolume
+    };
+
     Polygon polygon;
     double  z_min { 0.0 };
     double  z_max { 0.0 };
-    bool    from_3d_config { false };
+    Purpose purpose { Purpose::MaterialKeepout };
     bool    has_z_range { false };
+
+    bool is_collision_volume() const { return purpose == Purpose::CollisionVolume; }
 };
 std::vector<BedExcludeRegion> get_bed_excluded_regions(const DynamicPrintConfig& cfg);
 std::vector<BedExcludeRegion> get_bed_excluded_regions(const PrintConfig& cfg);
@@ -2332,8 +2340,12 @@ std::vector<std::vector<BedExcludeRegion>> get_bed_excluded_regions_by_extruder(
 int bed_exclusion_extruder_for_filament(size_t filament_id, const std::vector<int> &configured_map,
                                         FilamentMapMode map_mode, bool is_bambu, bool automatic_map_resolved,
                                         size_t extruder_count);
-bool has_bed_exclusion_volume_syntax(const ConfigOptionPoints& bed_exclude_area);
-bool is_valid_bed_exclude_area_string(const std::string &value, double printable_height);
+bool is_bed_exclusion_volume_syntax(const std::string &value);
+bool is_valid_bed_exclude_volumes_string(const std::string &value, double printable_height);
+bool has_bed_exclude_volumes(const DynamicPrintConfig &cfg);
+bool has_bed_exclude_volumes(const PrintConfig &cfg);
+BedExcludeVolumeMode active_bed_exclude_volume_mode(const DynamicPrintConfig &cfg);
+BedExcludeVolumeMode active_bed_exclude_volume_mode(const PrintConfig &cfg);
 Slic3r::Polygons get_bed_excluded_area(const PrintConfig& cfg);
 Slic3r::Polygon get_bed_shape_with_excluded_area(const PrintConfig& cfg, bool use_share = false);
 bool has_skirt(const DynamicPrintConfig& cfg);

@@ -122,7 +122,7 @@ using namespace Slic3r;
 static Pointfs legacy_bed_exclude_area_points(const DynamicPrintConfig &config)
 {
     const ConfigOptionPoints *option = config.option<ConfigOptionPoints>("bed_exclude_area");
-    return option != nullptr && !has_bed_exclusion_volume_syntax(*option) ? option->values : Pointfs{};
+    return option != nullptr && !has_bed_exclude_volumes(config) ? option->values : Pointfs{};
 }
 
 std::map<int, std::string> cli_errors = {

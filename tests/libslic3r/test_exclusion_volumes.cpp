@@ -30,7 +30,8 @@ Polygon rectangle(double min_x, double min_y, double max_x, double max_y)
 BedExcludeRegion region(double min_x, double min_y, double max_x, double max_y,
                         double z_min, double z_max, bool has_z_range = true)
 {
-    return {rectangle(min_x, min_y, max_x, max_y), z_min, z_max, true, has_z_range};
+    return {rectangle(min_x, min_y, max_x, max_y), z_min, z_max,
+            BedExcludeRegion::Purpose::CollisionVolume, has_z_range};
 }
 
 DynamicPrintConfig two_extruder_config()
@@ -42,7 +43,7 @@ DynamicPrintConfig two_extruder_config()
     config.set_key_value("extruder_printable_height", new ConfigOptionFloatsNullable{200.0, 200.0});
     config.set_key_value("master_extruder_id", new ConfigOptionInt(1));
     config.set_key_value("printable_height", new ConfigOptionFloat(200.0));
-    config.set_deserialize_strict("bed_exclude_area", "10..30;0x0,10x0,10x10,0x10");
+    config.set_key_value("bed_exclude_volumes", new ConfigOptionString("10..30;0x0,10x0,10x10,0x10"));
     return config;
 }
 
@@ -86,27 +87,16 @@ TEST_CASE("Legacy exclusion polygons keep their point representation", "[Exclusi
     REQUIRE(option.deserialize("0x0,10x0,10x10,0x10"));
     REQUIRE(option.values.size() == 4);
     CHECK(option.serialize() == "0x0,10x0,10x10,0x10");
-    CHECK_FALSE(has_bed_exclusion_volume_syntax(option));
+    CHECK_FALSE(is_bed_exclusion_volume_syntax(option.serialize()));
 }
 
-TEST_CASE("Extended exclusion definitions retain their serialized representation", "[ExclusionVolume][PrintConfig]")
+TEST_CASE("Legacy point options reject collision-volume syntax", "[ExclusionVolume][PrintConfig]")
 {
     const std::string definition = "0..10;0x0,10x0,10x10,0x10|20x20,30x20,30x30,20x30";
     ConfigOptionPoints option;
-    REQUIRE(option.deserialize(definition));
+    CHECK_FALSE(option.deserialize(definition));
     CHECK(option.values.empty());
-    CHECK(option.serialize() == definition);
-    CHECK(option.vserialize() == std::vector<std::string>{definition});
-    CHECK(has_bed_exclusion_volume_syntax(option));
-
-    std::unique_ptr<ConfigOption> cloned(option.clone());
-    REQUIRE(cloned != nullptr);
-    CHECK(*cloned == option);
-    CHECK(cloned->hash() == option.hash());
-
-    ConfigOptionPoints assigned;
-    assigned.set(&option);
-    CHECK(assigned == option);
+    CHECK(is_bed_exclusion_volume_syntax(definition));
 }
 
 TEST_CASE("Exclusion syntax validation accepts supported forms and rejects malformed regions", "[ExclusionVolume][PrintConfig]")
@@ -126,7 +116,7 @@ TEST_CASE("Exclusion syntax validation accepts supported forms and rejects malfo
     }));
 
     DYNAMIC_SECTION(definition) {
-        CHECK(is_valid_bed_exclude_area_string(definition, 200.0) == valid);
+        CHECK(is_valid_bed_exclude_volumes_string(definition, 200.0) == valid);
     }
 }
 
@@ -134,9 +124,8 @@ TEST_CASE("Extended exclusion Z ranges are defaulted and clamped to printable he
 {
     DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
     config.set_key_value("printable_height", new ConfigOptionFloat(100.0));
-    config.set_deserialize_strict(
-        "bed_exclude_area",
-        "-20..25;0x0,10x0,10x10,0x10|75..150;20x0,30x0,30x10,20x10|..;40x0,50x0,50x10,40x10");
+    config.set_key_value("bed_exclude_volumes", new ConfigOptionString(
+        "-20..25;0x0,10x0,10x10,0x10|75..150;20x0,30x0,30x10,20x10|..;40x0,50x0,50x10,40x10"));
 
     const std::vector<BedExcludeRegion> regions = get_bed_excluded_regions(config);
     REQUIRE(regions.size() == 3);
@@ -148,10 +137,88 @@ TEST_CASE("Extended exclusion Z ranges are defaulted and clamped to printable he
     CHECK_THAT(regions[2].z_max, WithinAbs(100.0, 1e-9));
 }
 
+TEST_CASE("CLI keeps legacy areas and collision volumes on separate options", "[ExclusionVolume][PrintConfig][CLI]")
+{
+    const char *legacy_area_argv[] = {
+        "orca-slicer", "--bed-exclude-area", "0x0,10x0,10x10,0x10"
+    };
+    DynamicPrintAndCLIConfig legacy_area_config;
+    t_config_option_keys extra;
+    t_config_option_keys keys;
+    REQUIRE(legacy_area_config.read_cli(3, legacy_area_argv, &extra, &keys));
+    REQUIRE(legacy_area_config.opt<ConfigOptionPoints>("bed_exclude_area") != nullptr);
+    CHECK(legacy_area_config.opt<ConfigOptionPoints>("bed_exclude_area")->values.size() == 4);
+
+    const char *volume_argv[] = {
+        "orca-slicer", "--bed-exclude-volumes", "0..10;0x0,10x0,10x10,0x10"
+    };
+    DynamicPrintAndCLIConfig volume_config;
+    extra.clear();
+    keys.clear();
+    REQUIRE(volume_config.read_cli(3, volume_argv, &extra, &keys));
+    CHECK(volume_config.opt_string("bed_exclude_volumes") == volume_argv[2]);
+
+    const char *legacy_argv[] = {
+        "orca-slicer", "--bed-exclude-area", "0..10;0x0,10x0,10x10,0x10"
+    };
+    DynamicPrintAndCLIConfig legacy_config;
+    extra.clear();
+    keys.clear();
+    CHECK_FALSE(legacy_config.read_cli(3, legacy_argv, &extra, &keys));
+}
+
+TEST_CASE("Legacy areas remain material keep-outs until collision volumes are configured", "[ExclusionVolume][PrintConfig]")
+{
+    DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+    config.set_key_value("printable_height", new ConfigOptionFloat(100.0));
+    config.set_deserialize_strict("bed_exclude_area", "0x0,10x0,10x10,0x10");
+
+    auto regions = get_bed_excluded_regions(config);
+    REQUIRE(regions.size() == 1);
+    CHECK_FALSE(regions.front().is_collision_volume());
+    CHECK_FALSE(has_bed_exclude_volumes(config));
+
+    config.set_key_value("bed_exclude_volumes", new ConfigOptionString("20x20,30x20,30x30,20x30"));
+    regions = get_bed_excluded_regions(config);
+    REQUIRE(regions.size() == 1);
+    CHECK(regions.front().is_collision_volume());
+    CHECK(regions.front().polygon.contains(Point::new_scale(25.0, 25.0)));
+    CHECK_FALSE(regions.front().polygon.contains(Point::new_scale(5.0, 5.0)));
+}
+
+TEST_CASE("A nonempty invalid collision-volume definition never falls back to the legacy area", "[ExclusionVolume][PrintConfig]")
+{
+    DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+    config.set_deserialize_strict("bed_exclude_area", "0x0,10x0,10x10,0x10");
+    config.set_key_value("bed_exclude_volumes", new ConfigOptionString("not a polygon"));
+
+    CHECK(has_bed_exclude_volumes(config));
+    CHECK(get_bed_excluded_regions(config).empty());
+    CHECK_FALSE(is_valid_bed_exclude_volumes_string(config.opt_string("bed_exclude_volumes"), 100.0));
+}
+
+TEST_CASE("An empty collision-volume configuration falls back to the legacy area", "[ExclusionVolume][PrintConfig]")
+{
+    DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+    config.set_num_extruders(2);
+    config.set_deserialize_strict("bed_exclude_area", "0x0,10x0,10x10,0x10");
+    config.set_key_value("bed_exclude_volume_mode",
+        new ConfigOptionEnum<BedExcludeVolumeMode>(BedExcludeVolumeMode::PerExtruder));
+    config.set_key_value("extruder_bed_exclude_volumes", new ConfigOptionStrings{"", ""});
+
+    CHECK_FALSE(has_bed_exclude_volumes(config));
+    CHECK(active_bed_exclude_volume_mode(config) == BedExcludeVolumeMode::Shared);
+    const auto groups = get_bed_excluded_regions_by_extruder(config);
+    REQUIRE(groups.size() == 2);
+    REQUIRE(groups[0].size() == 1);
+    REQUIRE(groups[1].size() == 1);
+    CHECK_FALSE(groups[0][0].is_collision_volume());
+}
+
 TEST_CASE("Shared exclusion volumes resolve identically for every extruder", "[ExclusionVolume][PrintConfig][MultiNozzle]")
 {
     DynamicPrintConfig config = two_extruder_config();
-    config.set_key_value("bed_exclude_area_mode", new ConfigOptionEnum<BedExcludeAreaMode>(BedExcludeAreaMode::Shared));
+    config.set_key_value("bed_exclude_volume_mode", new ConfigOptionEnum<BedExcludeVolumeMode>(BedExcludeVolumeMode::Shared));
 
     const auto groups = get_bed_excluded_regions_by_extruder(config);
     REQUIRE(groups.size() == 2);
@@ -168,7 +235,7 @@ TEST_CASE("Shared exclusion volumes resolve identically for every extruder", "[E
 TEST_CASE("Toolhead-relative exclusion volumes follow nozzle offset deltas", "[ExclusionVolume][PrintConfig][MultiNozzle]")
 {
     DynamicPrintConfig config = two_extruder_config();
-    config.set_key_value("bed_exclude_area_mode", new ConfigOptionEnum<BedExcludeAreaMode>(BedExcludeAreaMode::ToolheadOffset));
+    config.set_key_value("bed_exclude_volume_mode", new ConfigOptionEnum<BedExcludeVolumeMode>(BedExcludeVolumeMode::ToolheadOffset));
 
     const auto groups = get_bed_excluded_regions_by_extruder(config);
     REQUIRE(groups.size() == 2);
@@ -184,7 +251,7 @@ TEST_CASE("Toolhead-relative exclusions honour a non-default reference extruder"
 {
     DynamicPrintConfig config = two_extruder_config();
     config.set_key_value("master_extruder_id", new ConfigOptionInt(2));
-    config.set_key_value("bed_exclude_area_mode", new ConfigOptionEnum<BedExcludeAreaMode>(BedExcludeAreaMode::ToolheadOffset));
+    config.set_key_value("bed_exclude_volume_mode", new ConfigOptionEnum<BedExcludeVolumeMode>(BedExcludeVolumeMode::ToolheadOffset));
 
     const auto groups = get_bed_excluded_regions_by_extruder(config);
     REQUIRE(groups.size() == 2);
@@ -197,8 +264,8 @@ TEST_CASE("Toolhead-relative exclusions honour a non-default reference extruder"
 TEST_CASE("Individual exclusion volumes remain authoritative per extruder", "[ExclusionVolume][PrintConfig][MultiNozzle]")
 {
     DynamicPrintConfig config = two_extruder_config();
-    config.set_key_value("bed_exclude_area_mode", new ConfigOptionEnum<BedExcludeAreaMode>(BedExcludeAreaMode::PerExtruder));
-    config.set_key_value("extruder_bed_exclude_area", new ConfigOptionStrings{
+    config.set_key_value("bed_exclude_volume_mode", new ConfigOptionEnum<BedExcludeVolumeMode>(BedExcludeVolumeMode::PerExtruder));
+    config.set_key_value("extruder_bed_exclude_volumes", new ConfigOptionStrings{
         "0..25;0x0,8x0,8x8,0x8|40..60;20x20,30x20,30x30,20x30",
         "",
     });
@@ -214,9 +281,8 @@ TEST_CASE("Legacy bed helpers include only regions touching the first layer", "[
 {
     DynamicPrintConfig dynamic = DynamicPrintConfig::full_print_config();
     dynamic.set_key_value("printable_height", new ConfigOptionFloat(100.0));
-    dynamic.set_deserialize_strict(
-        "bed_exclude_area",
-        "0..5;0x0,10x0,10x10,0x10|20..30;20x0,30x0,30x10,20x10");
+    dynamic.set_key_value("bed_exclude_volumes", new ConfigOptionString(
+        "0..5;0x0,10x0,10x10,0x10|20..30;20x0,30x0,30x10,20x10"));
     PrintConfig config;
     config.apply(dynamic, true);
 
