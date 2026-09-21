@@ -5158,6 +5158,8 @@ void TabPrinter::build_fff()
         Line convert_exclusion_line = Line{ L("Collision checking"), L("Convert the legacy excluded bed area into a collision volume so Orca can check G-code moves and reroute travel around it.") };
         convert_exclusion_line.widget = [this](wxWindow *parent) {
             Button *button = new Button(parent, _L("Convert area to collision volume"));
+            wxSizer *sizer = new wxBoxSizer(wxHORIZONTAL);
+            sizer->Add(button);
             button->Bind(wxEVT_BUTTON, [this](wxCommandEvent &) {
                 const ConfigOptionPoints *legacy = m_config->option<ConfigOptionPoints>("bed_exclude_area");
                 if (legacy == nullptr || legacy->values.size() < 3) {
@@ -5182,7 +5184,7 @@ void TabPrinter::build_fff()
                 on_presets_changed();
                 wxGetApp().plater()->update();
             });
-            return button;
+            return sizer;
         };
         optgroup->append_line(convert_exclusion_line);
 
