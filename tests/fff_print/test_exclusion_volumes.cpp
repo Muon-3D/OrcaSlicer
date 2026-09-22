@@ -565,15 +565,22 @@ TEST_CASE("G-code processor tracks absolute relative and reset coordinate state"
         CHECK_FALSE(result.conflict);
     }
 
-    SECTION("all supported homing-axis spellings make the homed position unknown") {
+    SECTION("full or XY homing makes the XY start position unknown") {
         const std::string homing = GENERATE(
             std::string("G28"), std::string("G28 X"), std::string("G28 X Y"),
             std::string("G28 XY"), std::string("G28 X0 Y0"), std::string("G28 XYZ"),
-            std::string("G28 Z P0"), std::string("G28 Z Z_OFFSET -0.07"),
             std::string("G28 W"));
         const ProcessorExclusionResult result = run_processor(
             config, "G90\nG1 X20 Y50 Z5\n" + homing + "\nG1 X80 Y50 Z5\n");
         CHECK_FALSE(result.conflict);
+    }
+
+    SECTION("Z-only homing preserves the known XY position") {
+        const std::string homing = GENERATE(
+            std::string("G28 Z P0"), std::string("G28 Z Z_OFFSET -0.07"));
+        const ProcessorExclusionResult result = run_processor(
+            config, "G90\nG1 X20 Y50 Z5\n" + homing + "\nG1 X80 Y50 Z5\n");
+        CHECK(result.conflict);
     }
 }
 
