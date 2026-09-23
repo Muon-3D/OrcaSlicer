@@ -122,31 +122,6 @@ bool bed_exclusion_applies(const ArrangePolygon &item, const ArrangePolygon &fix
     return bed_exclusion_applies_impl(item, fixed_item);
 }
 
-void invalidate_bed_exclusion_conflicts(ArrangePolygons &items, const ArrangePolygons &fixed_items,
-                                        const Vec2crd fixed_items_offset)
-{
-    for (ArrangePolygon &item : items) {
-        if (item.bed_idx < 0)
-            continue;
-
-        BoundingBox item_bbox = get_extents(item.transformed_poly());
-        item_bbox.offset(std::max<coord_t>(0, item.inflation));
-
-        for (const ArrangePolygon &fixed : fixed_items) {
-            if (fixed.bed_idx != item.bed_idx || !bed_exclusion_applies(item, fixed))
-                continue;
-
-            BoundingBox exclusion_bbox = get_extents(fixed.transformed_poly());
-            exclusion_bbox.offset(std::max<coord_t>(0, fixed.inflation));
-            exclusion_bbox.translate(fixed_items_offset.x(), fixed_items_offset.y());
-            if (item_bbox.overlap(exclusion_bbox)) {
-                item.bed_idx = UNARRANGED;
-                break;
-            }
-        }
-    }
-}
-
 void update_arrange_params(ArrangeParams& params, const DynamicPrintConfig* print_cfg, const ArrangePolygons& selected)
 {
     double                             skirt_distance = get_real_skirt_dist(*print_cfg);

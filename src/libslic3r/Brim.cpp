@@ -437,8 +437,15 @@ static ExPolygons outer_inner_brim_area(const Print& print,
 {
     unsigned int support_material_extruder = printExtruders.front() + 1;
     Flow flow = print.brim_flow();
-    const std::vector<std::vector<BedExcludeRegion>> exclusion_regions_by_extruder =
-        get_bed_excluded_regions_by_extruder(print.config());
+    std::vector<std::vector<BedExcludeRegion>> exclusion_regions_by_extruder;
+    if (has_bed_exclude_volumes(print.config())) {
+        exclusion_regions_by_extruder = get_bed_excluded_regions_by_extruder(print.config());
+        // Legacy areas historically constrain placement, not generated
+        // geometry. Only explicit collision volumes may trim a brim.
+        for (std::vector<BedExcludeRegion> &regions : exclusion_regions_by_extruder)
+            regions.erase(std::remove_if(regions.begin(), regions.end(),
+                [](const BedExcludeRegion &region) { return !region.is_collision_volume(); }), regions.end());
+    }
     const double first_layer_top_z = std::max(0.0, print.skirt_first_layer_height());
     const coord_t exclusion_clearance = brim_exclusion_clearance(flow);
 

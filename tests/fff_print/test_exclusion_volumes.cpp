@@ -527,6 +527,26 @@ TEST_CASE("Travel router uses only the active nozzle exclusion set", "[Exclusion
     CHECK(clear.detail == ExclusionVolumeTravelAvoidance::Detail::NoActiveObstacles);
 }
 
+TEST_CASE("Travel router accepts firmware positions outside the printable boundary", "[ExclusionVolume][TravelRouting]")
+{
+    ExclusionVolumeTravelAvoidance router;
+    router.init(static_config(exclusion_config()), Vec3d::Zero());
+
+    SECTION("start outside") {
+        const auto result = router.route(
+            travel({Vec2d(-5.0, 50.0), Vec2d(80.0, 50.0)}), 5.0, 5.0, 0);
+        REQUIRE(result.status == ExclusionVolumeTravelAvoidance::Status::Rerouted);
+        check_path_avoids_rect(result.path, Rect{40.0, 40.0, 60.0, 60.0});
+    }
+
+    SECTION("end outside") {
+        const auto result = router.route(
+            travel({Vec2d(20.0, 50.0), Vec2d(105.0, 50.0)}), 5.0, 5.0, 0);
+        REQUIRE(result.status == ExclusionVolumeTravelAvoidance::Status::Rerouted);
+        check_path_avoids_rect(result.path, Rect{40.0, 40.0, 60.0, 60.0});
+    }
+}
+
 TEST_CASE("G-code processor ignores the artificial first XY origin and checks subsequent travel", "[ExclusionVolume][GCodeProcessor]")
 {
     const FullPrintConfig config = static_config(exclusion_config());

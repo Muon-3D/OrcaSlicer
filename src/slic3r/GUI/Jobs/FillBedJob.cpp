@@ -244,8 +244,6 @@ void FillBedJob::process(Ctl &ctl)
     };
     // final align用的是凸包，在有fixed item的情况下可能找到的参考点位置是错的，这里就不做了。见STUDIO-3265
     params.do_final_align = !is_bbl;
-    if (has_bed_exclusion_regions(params.excluded_regions))
-        params.do_final_align = false;
 
     if (m_selected.size() > 100) {
         // too many items, just find grid empty cells to put them
@@ -303,11 +301,8 @@ void FillBedJob::process(Ctl &ctl)
             }
         }
 
-        invalidate_bed_exclusion_conflicts(
-            m_selected, m_unselected, Vec2crd(scale_(plate_origin.x()), scale_(plate_origin.y())));
     } else {
         arrangement::arrange(m_selected, m_unselected, m_bedpts, params);
-        invalidate_bed_exclusion_conflicts(m_selected, m_unselected);
     }
 
     // finalize just here.

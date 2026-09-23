@@ -734,7 +734,6 @@ private:
 
     struct ToolchangePositionState
     {
-        int   physical_extruder_id{-1};
         Vec2d emitted_xy{Vec2d::Zero()};
     };
 

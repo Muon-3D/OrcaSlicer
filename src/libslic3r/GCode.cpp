@@ -1402,6 +1402,13 @@ static std::vector<Vec2d> get_path_of_change_filament(const Print& print)
             // We have informed the m_writer about the current extruder_id, we can ignore the generated G-code.
         }
 
+        // The change G-code may move the carriage even when the incoming
+        // filament uses the same physical nozzle (the common AMS case).
+        // Synchronize before planning the tower-entry travel so exclusion
+        // avoidance starts from the emitted position, not the stale one.
+        if (position_before_toolchange)
+            gcodegen.synchronize_toolchange_position(*position_before_toolchange, toolchange_gcode_str);
+
         if (need_travel_after_change_filament_gcode) {
             // move to start_pos for wiping after toolchange
             if (!is_used_travel_avoid_perimeter) {
@@ -2671,11 +2678,16 @@ void GCode::do_export(Print* print, const char* path, GCodeProcessorResult* resu
     m_processor.finalize(true);
     if (m_processor.get_result().exclusion_volume_path_conflict) {
         const int extruder_id = m_processor.get_result().exclusion_volume_conflict_extruder_id;
-        const std::string warning = extruder_id >= 0 ?
+        std::string warning = extruder_id >= 0 ?
             Slic3r::format(
                 _(L("A G-code move intersects an exclusion volume for extruder %1%. This may cause a printer collision.")),
                 std::to_string(extruder_id + 1)) :
             _(L("A G-code move intersects an exclusion volume. This may cause a printer collision."));
+        if (m_processor.get_result().exclusion_volume_conflict_used_unknown_z) {
+            warning += "\n" + Slic3r::format(
+                _(L("The intersecting move is at G-code line %1%. Its Z position is unknown after homing, so Orca checked it against every height.")),
+                std::to_string(m_processor.get_result().exclusion_volume_conflict_gcode_id));
+        }
         print->active_step_add_warning(
             PrintStateBase::WarningLevel::CRITICAL,
             warning,
@@ -5259,14 +5271,16 @@ std::string GCode::generate_object_brim(
     if (!first_layer)
         return {};
 
-    auto emit_brim = [this, extruder_id](const ExtrusionEntityCollection& brim,
+    const bool wait_for_owner_filament = has_bed_exclude_volumes(m_config) &&
+        active_bed_exclude_volume_mode(m_config) != BedExcludeVolumeMode::Shared;
+    auto emit_brim = [this, extruder_id, wait_for_owner_filament](const ExtrusionEntityCollection& brim,
                                          const std::vector<ObjectInstanceID>& instances,
                                          const unsigned int brim_filament_id) {
         std::string gcode;
         // Combined brims have an explicit owner filament. Waiting for that
-        // filament avoids inheriting whichever tool first encounters a carrier
-        // object in the layer traversal.
-        if (brim_filament_id != extruder_id)
+        // filament is only required when each nozzle has different obstacles.
+        // Otherwise retain Orca's established first-visit emission order.
+        if (wait_for_owner_filament && brim_filament_id != extruder_id)
             return gcode;
         const bool already_emitted = std::none_of(instances.begin(), instances.end(), [this](const ObjectInstanceID& instance) {
             return m_objsWithBrim.find(instance) != m_objsWithBrim.end();
@@ -7273,14 +7287,13 @@ std::optional<GCode::ToolchangePositionState> GCode::capture_toolchange_position
 
     const Vec2d plate_offset = m_writer.get_xy_offset().cast<double>();
     return ToolchangePositionState{
-        int(m_writer.filament()->extruder_id()),
         this->point_to_gcode(m_last_pos.to_point()) - plate_offset
     };
 }
 
 void GCode::synchronize_toolchange_position(const ToolchangePositionState &before, const std::string &emitted_gcode)
 {
-    if (m_writer.filament() == nullptr || int(m_writer.filament()->extruder_id()) == before.physical_extruder_id)
+    if (m_writer.filament() == nullptr)
         return;
 
     const std::optional<Vec2d> emitted_xy = emitted_xy_after_gcode(emitted_gcode, before.emitted_xy);
@@ -7294,7 +7307,12 @@ void GCode::synchronize_toolchange_position(const ToolchangePositionState &befor
     Vec3d       writer_position = m_writer.get_position();
     writer_position.head<2>() = writer_xy;
     m_writer.set_position(writer_position);
+    // Updating the known XY origin must not cancel Orca's deliberate
+    // post-toolchange Z restore. set_last_pos() normally marks the entire
+    // position as defined, so preserve the caller's state across the XY sync.
+    const bool last_pos_defined = m_last_pos_defined;
     this->set_last_pos(this->gcode_to_point(writer_xy));
+    m_last_pos_defined = last_pos_defined;
 }
 
 void GCode::set_origin(const Vec2d &pointf)

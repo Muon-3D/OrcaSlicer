@@ -7,6 +7,7 @@
 #include "libslic3r/TriangleMesh.hpp"
 
 #include <algorithm>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -105,10 +106,13 @@ TEST_CASE("Exclusion syntax validation accepts supported forms and rejects malfo
         {"", true},
         {"0x0,10x0,10x10,0x10", true},
         {"0..10;0x0,10x0,10x10,0x10", true},
+        {"0.5..10.5;0x0,10x0,10x10,0x10", true},
         {"..10;0x0,10x0,10x10,0x10", true},
         {"10..;0x0,10x0,10x10,0x10", true},
         {"0x0,10x0,10x10,0x10|20x20,30x20,30x30,20x30", true},
         {"20..10;0x0,10x0,10x10,0x10", false},
+        {"10..10;0x0,10x0,10x10,0x10", false},
+        {"300..400;0x0,10x0,10x10,0x10", false},
         {"zero..10;0x0,10x0,10x10,0x10", false},
         {"0..10;0x0,10x0", false},
         {"0..10;", false},
@@ -167,7 +171,7 @@ TEST_CASE("CLI keeps legacy areas and collision volumes on separate options", "[
     CHECK_FALSE(legacy_config.read_cli(3, legacy_argv, &extra, &keys));
 }
 
-TEST_CASE("Legacy areas remain material keep-outs until collision volumes are configured", "[ExclusionVolume][PrintConfig]")
+TEST_CASE("Legacy areas and collision volumes remain additive", "[ExclusionVolume][PrintConfig]")
 {
     DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
     config.set_key_value("printable_height", new ConfigOptionFloat(100.0));
@@ -180,20 +184,23 @@ TEST_CASE("Legacy areas remain material keep-outs until collision volumes are co
 
     config.set_key_value("bed_exclude_volumes", new ConfigOptionString("20x20,30x20,30x30,20x30"));
     regions = get_bed_excluded_regions(config);
-    REQUIRE(regions.size() == 1);
-    CHECK(regions.front().is_collision_volume());
-    CHECK(regions.front().polygon.contains(Point::new_scale(25.0, 25.0)));
-    CHECK_FALSE(regions.front().polygon.contains(Point::new_scale(5.0, 5.0)));
+    REQUIRE(regions.size() == 2);
+    CHECK_FALSE(regions[0].is_collision_volume());
+    CHECK(regions[0].polygon.contains(Point::new_scale(5.0, 5.0)));
+    CHECK(regions[1].is_collision_volume());
+    CHECK(regions[1].polygon.contains(Point::new_scale(25.0, 25.0)));
 }
 
-TEST_CASE("A nonempty invalid collision-volume definition never falls back to the legacy area", "[ExclusionVolume][PrintConfig]")
+TEST_CASE("An invalid collision-volume definition does not suppress the legacy area", "[ExclusionVolume][PrintConfig]")
 {
     DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
     config.set_deserialize_strict("bed_exclude_area", "0x0,10x0,10x10,0x10");
     config.set_key_value("bed_exclude_volumes", new ConfigOptionString("not a polygon"));
 
     CHECK(has_bed_exclude_volumes(config));
-    CHECK(get_bed_excluded_regions(config).empty());
+    const auto regions = get_bed_excluded_regions(config);
+    REQUIRE(regions.size() == 1);
+    CHECK_FALSE(regions.front().is_collision_volume());
     CHECK_FALSE(is_valid_bed_exclude_volumes_string(config.opt_string("bed_exclude_volumes"), 100.0));
 }
 
@@ -247,6 +254,27 @@ TEST_CASE("Toolhead-relative exclusion volumes follow nozzle offset deltas", "[E
     CHECK_THAT(unscaled_x(shifted.min.y() - reference.min.y()), WithinAbs(5.0, 1e-6));
 }
 
+TEST_CASE("Toolhead-relative mode offsets collision volumes but not the shared legacy area", "[ExclusionVolume][PrintConfig][MultiNozzle]")
+{
+    DynamicPrintConfig config = two_extruder_config();
+    config.set_deserialize_strict("bed_exclude_area", "70x70,80x70,80x80,70x80");
+    config.set_key_value("bed_exclude_volume_mode", new ConfigOptionEnum<BedExcludeVolumeMode>(BedExcludeVolumeMode::ToolheadOffset));
+
+    const auto groups = get_bed_excluded_regions_by_extruder(config);
+    REQUIRE(groups.size() == 2);
+    REQUIRE(groups[0].size() == 2);
+    REQUIRE(groups[1].size() == 2);
+    CHECK_FALSE(groups[0][0].is_collision_volume());
+    CHECK_FALSE(groups[1][0].is_collision_volume());
+    CHECK(groups[0][0].polygon.points == groups[1][0].polygon.points);
+    CHECK(groups[0][1].polygon.points != groups[1][1].polygon.points);
+
+    const auto flattened = get_bed_excluded_regions(config);
+    CHECK(flattened.size() == 3);
+    CHECK(std::count_if(flattened.begin(), flattened.end(),
+        [](const BedExcludeRegion &region) { return !region.is_collision_volume(); }) == 1);
+}
+
 TEST_CASE("Toolhead-relative exclusions honour a non-default reference extruder", "[ExclusionVolume][PrintConfig][MultiNozzle]")
 {
     DynamicPrintConfig config = two_extruder_config();
@@ -275,6 +303,44 @@ TEST_CASE("Individual exclusion volumes remain authoritative per extruder", "[Ex
     CHECK(groups[0].size() == 2);
     CHECK(groups[1].empty());
     CHECK(get_bed_excluded_regions(config).size() == 2);
+}
+
+TEST_CASE("Individual collision volumes retain the shared legacy area", "[ExclusionVolume][PrintConfig][MultiNozzle]")
+{
+    DynamicPrintConfig config = two_extruder_config();
+    config.set_deserialize_strict("bed_exclude_area", "70x70,80x70,80x80,70x80");
+    config.set_key_value("bed_exclude_volume_mode", new ConfigOptionEnum<BedExcludeVolumeMode>(BedExcludeVolumeMode::PerExtruder));
+    config.set_key_value("extruder_bed_exclude_volumes", new ConfigOptionStrings{
+        "0..25;0x0,8x0,8x8,0x8", "0..25;20x0,28x0,28x8,20x8"
+    });
+
+    const auto groups = get_bed_excluded_regions_by_extruder(config);
+    REQUIRE(groups.size() == 2);
+    REQUIRE(groups[0].size() == 2);
+    REQUIRE(groups[1].size() == 2);
+    CHECK_FALSE(groups[0][0].is_collision_volume());
+    CHECK(groups[0][0].polygon.points == groups[1][0].polygon.points);
+    CHECK(groups[0][1].is_collision_volume());
+    CHECK(groups[1][1].is_collision_volume());
+}
+
+TEST_CASE("Individual exclusion validation accepts omitted trailing extruders", "[ExclusionVolume][PrintConfig][MultiNozzle]")
+{
+    DynamicPrintConfig dynamic = two_extruder_config();
+    dynamic.set_key_value("bed_exclude_volume_mode",
+        new ConfigOptionEnum<BedExcludeVolumeMode>(BedExcludeVolumeMode::PerExtruder));
+    dynamic.set_key_value("extruder_bed_exclude_volumes",
+        new ConfigOptionStrings{"0..25;0x0,8x0,8x8,0x8"});
+
+    FullPrintConfig config;
+    config.apply(dynamic, true);
+    const std::map<std::string, std::string> errors = validate(config);
+    CHECK(errors.find("extruder_bed_exclude_volumes") == errors.end());
+
+    const auto groups = get_bed_excluded_regions_by_extruder(config);
+    REQUIRE(groups.size() == 2);
+    CHECK(groups[0].size() == 1);
+    CHECK(groups[1].empty());
 }
 
 TEST_CASE("Legacy bed helpers include only regions touching the first layer", "[ExclusionVolume][PrintConfig]")

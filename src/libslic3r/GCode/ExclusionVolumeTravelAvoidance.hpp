@@ -1,11 +1,12 @@
 #pragma once
 
 #include "libslic3r/ExPolygon.hpp"
+#include "libslic3r/BoundingBox.hpp"
 #include "libslic3r/Polyline.hpp"
 #include "libslic3r/PrintConfig.hpp"
 
 #include <cstddef>
-#include <optional>
+#include <map>
 #include <vector>
 
 namespace Slic3r {
@@ -52,25 +53,21 @@ public:
 
     // Input and output are scaled XY points in the active nozzle's generated
     // G-code coordinates before GCodeWriter subtracts the plate offset.
-    Result route(const Polyline &travel, double start_z, double end_z, int extruder_id) const;
+    Result route(const Polyline &travel, double start_z, double end_z, int extruder_id);
 
 private:
     struct RoutingSpace
     {
         std::vector<BedExcludeRegion> regions;
-        Polygon bed_shape;
+        std::vector<BoundingBox>       region_bboxes;
+        ExPolygons                     valid_bed;
+        std::map<std::vector<size_t>, ExPolygons> obstacle_cache;
     };
 
-    struct ActiveObstacles
-    {
-        ExPolygons obstacles;
-        ExPolygons valid_bed;
-    };
-
-    std::optional<ActiveObstacles> active_obstacles(
-        const RoutingSpace &space,
+    const ExPolygons *active_obstacles(
+        RoutingSpace &space,
         double z_min,
-        double z_max) const;
+        double z_max);
 
     std::vector<RoutingSpace> m_spaces;
     coord_t m_clearance { 0 };

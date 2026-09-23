@@ -89,7 +89,24 @@ static std::vector<std::vector<BedExcludeRegion>> translated_bed_exclusion_volum
     return regions_by_extruder;
 }
 
-static std::optional<size_t> colliding_bed_exclusion_extruder(
+struct BedExclusionCollision
+{
+    size_t extruder_id;
+    bool   collision_volume;
+};
+
+static bool intersects_bed_exclusion_purpose(
+    const ModelInstance &instance,
+    const std::vector<BedExcludeRegion> &regions,
+    const bool collision_volume)
+{
+    return std::any_of(regions.begin(), regions.end(), [&](const BedExcludeRegion &region) {
+        return region.is_collision_volume() == collision_volume &&
+               instance.intersects_bed_exclude_region(region);
+    });
+}
+
+static std::optional<BedExclusionCollision> colliding_bed_exclusion(
     const Print &print,
     const PrintObject &print_object,
     const ModelInstance &instance,
@@ -97,6 +114,11 @@ static std::optional<size_t> colliding_bed_exclusion_extruder(
 {
     if (regions_by_extruder.empty())
         return std::nullopt;
+
+    // The legacy area is shared by every nozzle. Report it with Orca's
+    // established wording even when opt-in collision volumes coexist.
+    if (intersects_bed_exclusion_purpose(instance, regions_by_extruder.front(), false))
+        return BedExclusionCollision{ 0, false };
 
     const bool automatic = is_auto_filament_map_mode(print.get_filament_map_mode());
     if (automatic && print.is_BBL_printer()) {
@@ -107,12 +129,13 @@ static std::optional<size_t> colliding_bed_exclusion_extruder(
         // can print it.
         std::optional<size_t> first_collision;
         for (size_t extruder_id = 0; extruder_id < regions_by_extruder.size(); ++extruder_id) {
-            if (!instance.intersects_bed_exclude_regions(regions_by_extruder[extruder_id]))
+            if (!intersects_bed_exclusion_purpose(instance, regions_by_extruder[extruder_id], true))
                 return std::nullopt;
             if (!first_collision.has_value())
                 first_collision = extruder_id;
         }
-        return first_collision;
+        return first_collision.has_value() ?
+            std::optional<BedExclusionCollision>(BedExclusionCollision{ *first_collision, true }) : std::nullopt;
     }
 
     for (const unsigned int filament_id : print_object.printing_extruders()) {
@@ -122,8 +145,8 @@ static std::optional<size_t> colliding_bed_exclusion_extruder(
         if (resolved_extruder < 0)
             continue;
         const size_t extruder_id = size_t(resolved_extruder);
-        if (instance.intersects_bed_exclude_regions(regions_by_extruder[extruder_id]))
-            return extruder_id;
+        if (intersects_bed_exclusion_purpose(instance, regions_by_extruder[extruder_id], true))
+            return BedExclusionCollision{ extruder_id, true };
     }
     return std::nullopt;
 }
@@ -786,13 +809,14 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
                     // Convert the shift from the PrintObject's coordinates into ModelObject's coordinates by removing the centering offset.
                     convex_hull.translate(instance.shift - print_object->center_offset());
                 }
-                const std::optional<size_t> collision_extruder = colliding_bed_exclusion_extruder(
+                const std::optional<BedExclusionCollision> exclusion_collision = colliding_bed_exclusion(
                     print, *print_object, *instance.model_instance, exclusion_volumes);
-                if (collision_extruder.has_value()) {
-                    const std::string collision_message =
+                if (exclusion_collision.has_value()) {
+                    const std::string collision_message = !exclusion_collision->collision_volume ?
+                        (boost::format(L("%1% is too close to exclusion area. There may be collisions when printing.")) % instance.model_instance->get_object()->name).str() :
                         is_auto_filament_map_mode(print.get_filament_map_mode()) && print.is_BBL_printer() ?
-                        (boost::format(L("%1% intersects exclusion volumes for every available extruder.")) % instance.model_instance->get_object()->name).str() :
-                        (boost::format(L("%1% intersects an exclusion volume for extruder %2%.")) % instance.model_instance->get_object()->name % (*collision_extruder + 1)).str();
+                            (boost::format(L("%1% intersects exclusion volumes for every available extruder.")) % instance.model_instance->get_object()->name).str() :
+                            (boost::format(L("%1% intersects an exclusion volume for extruder %2%.")) % instance.model_instance->get_object()->name % (exclusion_collision->extruder_id + 1)).str();
                     if (single_object_exception.string.empty()) {
                         single_object_exception.string = collision_message;
                         // single_object_exception.object = instance.model_instance->get_object();
@@ -1457,12 +1481,13 @@ static StringObjectException layered_print_cleareance_valid(const Print &print, 
             }
             current_instance_hulls.emplace_back(volume_hull);
         }
-        if (const std::optional<size_t> collision_extruder = colliding_bed_exclusion_extruder(
-                print, *inst->print_object, *inst->model_instance, exclusion_volumes); collision_extruder.has_value()) {
-            const std::string message =
+        if (const std::optional<BedExclusionCollision> exclusion_collision = colliding_bed_exclusion(
+                print, *inst->print_object, *inst->model_instance, exclusion_volumes); exclusion_collision.has_value()) {
+            const std::string message = !exclusion_collision->collision_volume ?
+                inst->model_instance->get_object()->name + L(" is too close to exclusion area, there may be collisions when printing.") :
                 is_auto_filament_map_mode(print.get_filament_map_mode()) && print.is_BBL_printer() ?
-                (boost::format(L("%1% intersects exclusion volumes for every available extruder.")) % inst->model_instance->get_object()->name).str() :
-                (boost::format(L("%1% intersects an exclusion volume for extruder %2%.")) % inst->model_instance->get_object()->name % (*collision_extruder + 1)).str();
+                    (boost::format(L("%1% intersects exclusion volumes for every available extruder.")) % inst->model_instance->get_object()->name).str() :
+                    (boost::format(L("%1% intersects an exclusion volume for extruder %2%.")) % inst->model_instance->get_object()->name % (exclusion_collision->extruder_id + 1)).str();
             return {message + "\n", inst->model_instance};
         }
 
@@ -3691,8 +3716,13 @@ void Print::_make_skirt()
             }
         }
 
-        const std::vector<std::vector<BedExcludeRegion>> brim_exclusion_regions =
-            translated_bed_exclusion_volumes_by_extruder(*this);
+        std::vector<std::vector<BedExcludeRegion>> brim_exclusion_regions;
+        if (has_bed_exclude_volumes(m_config)) {
+            brim_exclusion_regions = translated_bed_exclusion_volumes_by_extruder(*this);
+            for (std::vector<BedExcludeRegion> &regions : brim_exclusion_regions)
+                regions.erase(std::remove_if(regions.begin(), regions.end(),
+                    [](const BedExcludeRegion &region) { return !region.is_collision_volume(); }), regions.end());
+        }
         const bool has_brim_exclusions = std::any_of(
             brim_exclusion_regions.begin(), brim_exclusion_regions.end(),
             [](const std::vector<BedExcludeRegion> &regions) { return !regions.empty(); });

@@ -198,8 +198,6 @@ void update_selected_items_axis_align(ArrangePolygons& selected, const DynamicPr
 
 bool has_bed_exclusion_regions(const ArrangePolygons& polygons);
 bool bed_exclusion_applies(const ArrangePolygon& item, const ArrangePolygon& fixed_item);
-void invalidate_bed_exclusion_conflicts(ArrangePolygons& items, const ArrangePolygons& fixed_items,
-                                        Vec2crd fixed_items_offset = Vec2crd::Zero());
 
 Points get_shrink_bedpts(const DynamicPrintConfig* print_cfg, const ArrangeParams& params);
 

@@ -91,8 +91,16 @@ std::vector<Polygons> support_exclusion_areas_for_layers(
         return result;
 
     const Print &print = *object.print();
-    const std::vector<std::vector<BedExcludeRegion>> regions_by_extruder =
+    // Preserve established support output for legacy bed-exclude areas. Support
+    // avoidance is an opt-in property of explicit collision volumes.
+    if (!has_bed_exclude_volumes(print.config()))
+        return result;
+
+    std::vector<std::vector<BedExcludeRegion>> regions_by_extruder =
         get_bed_excluded_regions_by_extruder(print.config());
+    for (std::vector<BedExcludeRegion> &regions : regions_by_extruder)
+        regions.erase(std::remove_if(regions.begin(), regions.end(),
+            [](const BedExcludeRegion &region) { return !region.is_collision_volume(); }), regions.end());
     if (regions_by_extruder.empty() ||
         std::all_of(regions_by_extruder.begin(), regions_by_extruder.end(),
             [](const std::vector<BedExcludeRegion> &regions) { return regions.empty(); }))

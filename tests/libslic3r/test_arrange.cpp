@@ -364,36 +364,6 @@ TEST_CASE("Shared bed exclusions apply to every arranged object", "[Arrange][Exc
     CHECK(bed_exclusion_applies(object, shared));
 }
 
-TEST_CASE("Conservative exclusion validation invalidates only relevant placements", "[Arrange][ExclusionVolume][MultiNozzle]")
-{
-    ArrangePolygon exclusion = make_square(scaled(20.));
-    exclusion.is_bed_exclusion = true;
-    exclusion.bed_exclusion_extruder_id = 0;
-    exclusion.has_z_range = true;
-    exclusion.z_min = 0.0;
-    exclusion.z_max = 30.0;
-
-    ArrangePolygon relevant = make_square(scaled(10.));
-    relevant.bed_exclusion_extruder_ids = {0};
-    relevant.has_z_range = true;
-    relevant.z_min = 0.0;
-    relevant.z_max = 10.0;
-
-    ArrangePolygon other_nozzle = relevant;
-    other_nozzle.bed_exclusion_extruder_ids = {1};
-
-    ArrangePolygon above = relevant;
-    above.z_min = 31.0;
-    above.z_max = 40.0;
-
-    ArrangePolygons items{relevant, other_nozzle, above};
-    invalidate_bed_exclusion_conflicts(items, {exclusion});
-
-    CHECK(items[0].bed_idx == UNARRANGED);
-    CHECK(items[1].bed_idx == 0);
-    CHECK(items[2].bed_idx == 0);
-}
-
 TEST_CASE("Arrange keeps relevant objects outside conditional exclusion obstacles", "[Arrange][ExclusionVolume]")
 {
     ArrangePolygon exclusion = make_square(scaled(30.));

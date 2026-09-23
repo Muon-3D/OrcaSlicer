@@ -601,8 +601,6 @@ void ArrangeJob::process(Ctl &ctl)
 
     bool   enable_wrapping = global_config.option<ConfigOptionBool>("enable_wrapping_detection")->value;
     partplate_list.preprocess_exclude_areas(params.excluded_regions, global_config, enable_wrapping, 1, scale_(1));
-    if (has_bed_exclusion_regions(params.excluded_regions))
-        params.do_final_align = false;
 
     BOOST_LOG_TRIVIAL(debug) << "arrange bedpts:" << bedpts[0].transpose() << ", " << bedpts[1].transpose() << ", " << bedpts[2].transpose() << ", " << bedpts[3].transpose();
 
@@ -626,7 +624,6 @@ void ArrangeJob::process(Ctl &ctl)
     }
 
     arrangement::arrange(m_selected, m_unselected, bedpts, params);
-    invalidate_bed_exclusion_conflicts(m_selected, m_unselected);
 
     // sort by item id
     std::sort(m_selected.begin(), m_selected.end(), [](auto a, auto b) {return a.itemid < b.itemid; });

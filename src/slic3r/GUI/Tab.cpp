@@ -1868,21 +1868,6 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
         }
     }
 
-    // Editing the dedicated collision-volume fields is an explicit opt-in to
-    // the new behaviour. Keep presets unambiguous by removing any legacy area;
-    // the resolver still gives volumes precedence when externally authored
-    // profiles contain both keys.
-    if (m_type == Preset::TYPE_PRINTER &&
-        (opt_key == "bed_exclude_volumes" || opt_key.rfind("extruder_bed_exclude_volumes#", 0) == 0)) {
-        const std::string *definition = boost::any_cast<std::string>(&value);
-        const ConfigOptionPoints *legacy = m_config->option<ConfigOptionPoints>("bed_exclude_area");
-        if (definition != nullptr && !definition->empty() && legacy != nullptr && !legacy->values.empty()) {
-            DynamicPrintConfig converted = *m_config;
-            converted.set_key_value("bed_exclude_area", new ConfigOptionPoints());
-            m_config_manipulation.apply(m_config, &converted);
-        }
-    }
-
     // Keep this preset's "plugins" manifest in sync when a plugin picker changes, so full_config() and
     // save_to_json() always find resolved "name;uuid;capability" references and rebuild it nowhere else.
     // Also drop any plugin config override entries for a capability the change just stopped
@@ -5152,12 +5137,9 @@ void TabPrinter::build_fff()
            return 	create_bed_shape_widget(parent);
         });
         optgroup->append_single_option_line("parallel_printheads_count");
-        Option option = optgroup->get_option("bed_exclude_area");
-        option.opt.full_width = true;
-        optgroup->append_single_option_line(option, "printer_basic_information_printable_space#excluded-bed-area");
-        Line convert_exclusion_line = Line{ L("Collision checking"), L("Convert the legacy excluded bed area into a collision volume so Orca can check G-code moves and reroute travel around it.") };
-        convert_exclusion_line.widget = [this](wxWindow *parent) {
+        create_line_with_widget(optgroup.get(), "bed_exclude_area", "printer_basic_information_printable_space#excluded-bed-area", [this](wxWindow *parent) {
             Button *button = new Button(parent, _L("Convert area to collision volume"));
+            button->SetToolTip(_L("Convert the legacy excluded bed area into a collision volume so Orca can check G-code moves and reroute travel around it."));
             wxSizer *sizer = new wxBoxSizer(wxHORIZONTAL);
             sizer->Add(button);
             button->Bind(wxEVT_BUTTON, [this](wxCommandEvent &) {
@@ -5185,8 +5167,7 @@ void TabPrinter::build_fff()
                 wxGetApp().plater()->update();
             });
             return sizer;
-        };
-        optgroup->append_line(convert_exclusion_line);
+        });
 
         Option volume_option = optgroup->get_option("bed_exclude_volumes");
         volume_option.opt.full_width = true;
@@ -6260,7 +6241,9 @@ void TabPrinter::toggle_options()
         const size_t exclusion_extruder_count = m_preset_bundle->get_printer_extruder_count();
         const bool collision_volumes_enabled = has_bed_exclude_volumes(*m_config);
         const BedExcludeVolumeMode exclusion_mode = active_bed_exclude_volume_mode(*m_config);
-        toggle_option("bed_exclude_area", !collision_volumes_enabled);
+        // Legacy areas and collision volumes are additive. Keep the established
+        // material keep-out editable while the opt-in motion constraints exist.
+        toggle_option("bed_exclude_area", true);
         toggle_line("bed_exclude_volume_mode", collision_volumes_enabled && exclusion_extruder_count > 1);
         toggle_line("bed_exclude_volumes", exclusion_extruder_count <= 1 || exclusion_mode != BedExcludeVolumeMode::PerExtruder);
 

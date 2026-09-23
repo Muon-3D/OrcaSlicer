@@ -30,6 +30,8 @@
 #include <string.h>
 #include <assert.h>
 
+#include <algorithm>
+
 #include <boost/log/trivial.hpp>
 
 #include <boost/filesystem/operations.hpp>
@@ -1363,8 +1365,18 @@ bool GLVolumeCollection::check_outside_state(const BuildVolume &build_volume, Mo
     BuildVolume plate_build_volume(pp_bed_shape, build_volume.printable_height(), build_volume.extruder_areas(), build_volume.extruder_heights());
     const std::vector<BoundingBoxf3>& exclude_areas = curr_plate->get_exclude_areas();
 
-    std::vector<std::vector<BedExcludeRegion>> exclusion_regions =
-        get_bed_excluded_regions_by_extruder(*GUI::wxGetApp().plater()->config());
+    const DynamicPrintConfig *plater_config = GUI::wxGetApp().plater()->config();
+    std::vector<std::vector<BedExcludeRegion>> exclusion_regions;
+    // Legacy bed-exclude areas retain Orca's existing 2D presentation. The
+    // per-extruder 3D state is needed only after collision volumes are enabled.
+    if (has_bed_exclude_volumes(*plater_config)) {
+        exclusion_regions = get_bed_excluded_regions_by_extruder(*plater_config);
+        // The native BuildVolume path below already presents the shared legacy
+        // area. Merge only opt-in collision volumes into nozzle-specific state.
+        for (std::vector<BedExcludeRegion> &regions : exclusion_regions)
+            regions.erase(std::remove_if(regions.begin(), regions.end(),
+                [](const BedExcludeRegion &region) { return !region.is_collision_volume(); }), regions.end());
+    }
     const Vec3d plate_origin = curr_plate->get_origin();
     const Point exclusion_offset(scale_(plate_origin.x()), scale_(plate_origin.y()));
     for (std::vector<BedExcludeRegion> &regions : exclusion_regions)

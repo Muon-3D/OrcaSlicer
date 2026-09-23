@@ -287,11 +287,32 @@ Polyline make_backward_detour(
     return Polyline(std::move(points));
 }
 
-bool polyline_inside_bed(const Polyline &polyline, const ExPolygons &valid_bed)
+bool routed_polyline_inside_bed(
+    const Polyline &polyline,
+    const ExPolygons &valid_bed,
+    const bool allow_start_outside,
+    const bool allow_end_outside)
 {
-    for (size_t idx = 1; idx < polyline.points.size(); ++idx)
+    if (valid_bed.empty())
+        return true;
+
+    const size_t last_idx = polyline.points.size() - 1;
+    for (size_t idx = 0; idx < polyline.points.size(); ++idx) {
+        if ((idx == 0 && allow_start_outside) || (idx == last_idx && allow_end_outside))
+            continue;
+        if (!point_in_expolygons(valid_bed, polyline.points[idx], true))
+            return false;
+    }
+
+    for (size_t idx = 1; idx < polyline.points.size(); ++idx) {
+        // A start or end produced by machine G-code may legitimately lie on
+        // or beyond the printable boundary. Constrain only the route vertices
+        // Orca adds; the firmware-defined transition to the bed remains intact.
+        if ((idx == 1 && allow_start_outside) || (idx == last_idx && allow_end_outside))
+            continue;
         if (!segment_inside_bed(polyline.points[idx - 1], polyline.points[idx], valid_bed))
             return false;
+    }
     return true;
 }
 
@@ -325,7 +346,9 @@ std::optional<Polyline> detour_around_obstacle(
     const Point &b,
     const ExPolygon &obstacle,
     const ExPolygons &obstacles,
-    const ExPolygons &valid_bed)
+    const ExPolygons &valid_bed,
+    const bool allow_start_outside,
+    const bool allow_end_outside)
 {
     const std::vector<SegmentIntersection> intersections = contour_intersections(a, b, obstacle.contour);
     if (intersections.size() < 2)
@@ -336,8 +359,10 @@ std::optional<Polyline> detour_around_obstacle(
     const Polyline forward = make_forward_detour(a, b, obstacle.contour, entry, exit);
     const Polyline backward = make_backward_detour(a, b, obstacle.contour, entry, exit);
 
-    const bool forward_bed_valid = polyline_inside_bed(forward, valid_bed);
-    const bool backward_bed_valid = polyline_inside_bed(backward, valid_bed);
+    const bool forward_bed_valid = routed_polyline_inside_bed(
+        forward, valid_bed, allow_start_outside, allow_end_outside);
+    const bool backward_bed_valid = routed_polyline_inside_bed(
+        backward, valid_bed, allow_start_outside, allow_end_outside);
     const bool forward_clear = forward_bed_valid && !polyline_intersects_obstacles(forward, obstacles);
     const bool backward_clear = backward_bed_valid && !polyline_intersects_obstacles(backward, obstacles);
 
@@ -401,6 +426,17 @@ void ExclusionVolumeTravelAvoidance::init(const PrintConfig &config, const Vec3d
 {
     clear();
 
+    double max_nozzle_diameter = 0.0;
+    for (double diameter : config.nozzle_diameter.values)
+        max_nozzle_diameter = std::max(max_nozzle_diameter, diameter);
+
+    // This is a numerical/perimeter-walk clearance, not a hidden toolhead
+    // footprint. The exact configured volume remains Stage 2's source of truth.
+    const coord_t minimum_clearance = static_cast<coord_t>(SCALED_EPSILON);
+    const coord_t configured_clearance =
+        static_cast<coord_t>(scale_(std::max(0.05, 0.1 * max_nozzle_diameter)));
+    m_clearance = std::max(minimum_clearance, configured_clearance);
+
     std::vector<std::vector<BedExcludeRegion>> regions_by_extruder =
         get_bed_excluded_regions_by_extruder(config);
     m_spaces.resize(regions_by_extruder.size());
@@ -420,24 +456,22 @@ void ExclusionVolumeTravelAvoidance::init(const PrintConfig &config, const Vec3d
         // subtracts the plate origin, so transform both obstacles and bed alike.
         const Vec2d translation_mm = plate_xy - extruder_offset;
         const Point translation = scaled<coord_t>(translation_mm);
-        for (BedExcludeRegion &region : space.regions)
+        for (BedExcludeRegion &region : space.regions) {
             region.polygon.translate(translation);
+            BoundingBox bbox(region.polygon.points);
+            bbox.offset(m_clearance);
+            space.region_bboxes.emplace_back(std::move(bbox));
+        }
 
-        space.bed_shape = base_bed_shape;
-        space.bed_shape.translate(translation);
-        space.bed_shape.make_counter_clockwise();
+        Polygon bed_shape = base_bed_shape;
+        bed_shape.translate(translation);
+        bed_shape.make_counter_clockwise();
+        if (bed_shape.points.size() >= 3) {
+            space.valid_bed = offset_ex(bed_shape, -float(m_clearance));
+            if (space.valid_bed.empty())
+                space.valid_bed = union_ex(Polygons { std::move(bed_shape) });
+        }
     }
-
-    double max_nozzle_diameter = 0.0;
-    for (double diameter : config.nozzle_diameter.values)
-        max_nozzle_diameter = std::max(max_nozzle_diameter, diameter);
-
-    // This is a numerical/perimeter-walk clearance, not a hidden toolhead
-    // footprint. The exact configured volume remains Stage 2's source of truth.
-    const coord_t minimum_clearance = static_cast<coord_t>(SCALED_EPSILON);
-    const coord_t configured_clearance =
-        static_cast<coord_t>(scale_(std::max(0.05, 0.1 * max_nozzle_diameter)));
-    m_clearance = std::max(minimum_clearance, configured_clearance);
 }
 
 void ExclusionVolumeTravelAvoidance::clear()
@@ -453,30 +487,43 @@ bool ExclusionVolumeTravelAvoidance::empty() const
     });
 }
 
-std::optional<ExclusionVolumeTravelAvoidance::ActiveObstacles>
+const ExPolygons *
 ExclusionVolumeTravelAvoidance::active_obstacles(
-    const RoutingSpace &space,
+    RoutingSpace &space,
     double z_min,
-    double z_max) const
+    double z_max)
 {
-    ActiveObstacles active;
-    active.obstacles = active_bed_exclusion_footprints(
-        space.regions, z_min, z_max, Point(0, 0), m_clearance);
-    if (active.obstacles.empty())
-        return std::nullopt;
-    if (space.bed_shape.points.size() >= 3) {
-        active.valid_bed = offset_ex(space.bed_shape, -float(m_clearance));
-        if (active.valid_bed.empty())
-            active.valid_bed = union_ex(Polygons { space.bed_shape });
+    std::vector<size_t> active_region_ids;
+    active_region_ids.reserve(space.regions.size());
+    for (size_t region_id = 0; region_id < space.regions.size(); ++region_id) {
+        const BedExcludeRegion &region = space.regions[region_id];
+        if (bed_exclusion_z_ranges_overlap(z_min, z_max, region.z_min, region.z_max))
+            active_region_ids.emplace_back(region_id);
     }
-    return active;
+    if (active_region_ids.empty())
+        return nullptr;
+
+    const auto cached = space.obstacle_cache.find(active_region_ids);
+    if (cached != space.obstacle_cache.end())
+        return cached->second.empty() ? nullptr : &cached->second;
+
+    std::vector<BedExcludeRegion> active_regions;
+    active_regions.reserve(active_region_ids.size());
+    for (const size_t region_id : active_region_ids)
+        active_regions.emplace_back(space.regions[region_id]);
+
+    ExPolygons obstacles = active_bed_exclusion_footprints(
+        active_regions, z_min, z_max, Point(0, 0), m_clearance);
+    const auto cache_result = space.obstacle_cache.emplace(
+        std::move(active_region_ids), std::move(obstacles));
+    return cache_result.first->second.empty() ? nullptr : &cache_result.first->second;
 }
 
 ExclusionVolumeTravelAvoidance::Result ExclusionVolumeTravelAvoidance::route(
     const Polyline &travel,
     double start_z,
     double end_z,
-    int extruder_id) const
+    int extruder_id)
 {
     Result result;
     result.path = travel;
@@ -488,7 +535,7 @@ ExclusionVolumeTravelAvoidance::Result ExclusionVolumeTravelAvoidance::route(
         return result;
     }
 
-    const RoutingSpace &space = m_spaces[size_t(extruder_id)];
+    RoutingSpace &space = m_spaces[size_t(extruder_id)];
     if (space.regions.empty()) {
         result.detail = Detail::NoActiveObstacles;
         return result;
@@ -496,19 +543,48 @@ ExclusionVolumeTravelAvoidance::Result ExclusionVolumeTravelAvoidance::route(
 
     const double z_min = std::min(start_z, end_z);
     const double z_max = std::max(start_z, end_z);
-    const std::optional<ActiveObstacles> active = active_obstacles(space, z_min, z_max);
-    if (!active || active->obstacles.empty()) {
+
+    // Most travels are nowhere near an exclusion. Reject them using the cheap
+    // precomputed boxes before unioning and inflating obstacle polygons.
+    const BoundingBox travel_bbox(travel.points);
+    bool has_active_z = false;
+    bool may_intersect = false;
+    for (size_t region_id = 0; region_id < space.regions.size(); ++region_id) {
+        const BedExcludeRegion &region = space.regions[region_id];
+        if (!bed_exclusion_z_ranges_overlap(z_min, z_max, region.z_min, region.z_max))
+            continue;
+        has_active_z = true;
+        if (region_id < space.region_bboxes.size() && space.region_bboxes[region_id].overlap(travel_bbox)) {
+            may_intersect = true;
+            break;
+        }
+    }
+    if (!has_active_z) {
         result.detail = Detail::NoActiveObstacles;
         return result;
     }
-    result.active_obstacles = active->obstacles.size();
+    if (!may_intersect) {
+        result.detail = Detail::NoIntersection;
+        return result;
+    }
+
+    const ExPolygons *active = active_obstacles(space, z_min, z_max);
+    if (active == nullptr || active->empty()) {
+        result.detail = Detail::NoActiveObstacles;
+        return result;
+    }
+    result.active_obstacles = active->size();
 
     const Point &start = travel.points.front();
     const Point &end = travel.points.back();
-    const std::optional<ActiveObstacles> start_obstacles = active_obstacles(space, start_z, start_z);
-    const std::optional<ActiveObstacles> end_obstacles = active_obstacles(space, end_z, end_z);
-    if ((start_obstacles && point_in_expolygons_interior(start_obstacles->obstacles, start)) ||
-        (end_obstacles && point_in_expolygons_interior(end_obstacles->obstacles, end))) {
+    const bool start_outside_bed = !space.valid_bed.empty() &&
+        !point_in_expolygons(space.valid_bed, start, true);
+    const bool end_outside_bed = !space.valid_bed.empty() &&
+        !point_in_expolygons(space.valid_bed, end, true);
+    const ExPolygons *start_obstacles = active_obstacles(space, start_z, start_z);
+    const ExPolygons *end_obstacles = active_obstacles(space, end_z, end_z);
+    if ((start_obstacles != nullptr && point_in_expolygons_interior(*start_obstacles, start)) ||
+        (end_obstacles != nullptr && point_in_expolygons_interior(*end_obstacles, end))) {
         result.status = Status::EndpointInside;
         result.detail = Detail::EndpointInside;
         return result;
@@ -516,7 +592,7 @@ ExclusionVolumeTravelAvoidance::Result ExclusionVolumeTravelAvoidance::route(
 
     bool needs_reroute = false;
     for (size_t idx = 1; idx < travel.points.size(); ++idx) {
-        if (segment_enters_expolygons_interior(travel.points[idx - 1], travel.points[idx], active->obstacles)) {
+        if (segment_enters_expolygons_interior(travel.points[idx - 1], travel.points[idx], *active)) {
             needs_reroute = true;
             break;
         }
@@ -534,18 +610,23 @@ ExclusionVolumeTravelAvoidance::Result ExclusionVolumeTravelAvoidance::route(
         for (size_t segment_idx = 0; segment_idx + 1 < path.points.size(); ++segment_idx) {
             const Point &a = path.points[segment_idx];
             const Point &b = path.points[segment_idx + 1];
-            if (!segment_inside_bed(a, b, active->valid_bed)) {
+            const bool allow_a_outside = start_outside_bed && segment_idx == 0;
+            const bool allow_b_outside = end_outside_bed && segment_idx + 2 == path.points.size();
+            const Polyline segment({a, b});
+            if (!routed_polyline_inside_bed(
+                    segment, space.valid_bed, allow_a_outside, allow_b_outside)) {
                 result.status = Status::Failed;
                 result.detail = Detail::SegmentOutsideBed;
                 return result;
             }
 
-            const std::optional<size_t> obstacle_idx = first_intersected_obstacle(a, b, active->obstacles);
+            const std::optional<size_t> obstacle_idx = first_intersected_obstacle(a, b, *active);
             if (!obstacle_idx)
                 continue;
 
             const std::optional<Polyline> detour = detour_around_obstacle(
-                a, b, active->obstacles[*obstacle_idx], active->obstacles, active->valid_bed);
+                a, b, (*active)[*obstacle_idx], *active, space.valid_bed,
+                allow_a_outside, allow_b_outside);
             if (!detour) {
                 result.status = Status::Failed;
                 result.detail = Detail::DetourFailed;
@@ -561,9 +642,10 @@ ExclusionVolumeTravelAvoidance::Result ExclusionVolumeTravelAvoidance::route(
         }
 
         if (!changed) {
-            path = simplify_path(path, active->obstacles, active->valid_bed);
-            if (!polyline_inside_bed(path, active->valid_bed) ||
-                polyline_intersects_obstacles(path, active->obstacles)) {
+            path = simplify_path(path, *active, space.valid_bed);
+            if (!routed_polyline_inside_bed(
+                    path, space.valid_bed, start_outside_bed, end_outside_bed) ||
+                polyline_intersects_obstacles(path, *active)) {
                 result.status = Status::Failed;
                 result.detail = Detail::FinalPathInvalid;
                 return result;
