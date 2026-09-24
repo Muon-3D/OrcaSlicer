@@ -1,0 +1,76 @@
+{
+  "ok": true,
+  "scanned_at": 1790251270.0,
+  "ethernet": {
+    "present": true,
+    "carrier": false,
+    "address": null
+  },
+  "networks": [
+    {
+      "ssid": "HomeWiFi",
+      "security": "wpa2",
+      "signal": 78,
+      "band": "2.4",
+      "channel": 6,
+      "bssids": 2,
+      "saved": false,
+      "in_use": false,
+      "supported": true,
+      "channel_permitted": true,
+      "region_suggestion": null
+    },
+    {
+      "ssid": "BT-Hub-8JX2",
+      "security": "wpa2_wpa3",
+      "signal": 64,
+      "band": "5",
+      "channel": 36,
+      "bssids": 1,
+      "saved": false,
+      "in_use": false,
+      "supported": true,
+      "channel_permitted": true,
+      "region_suggestion": null
+    },
+    {
+      "ssid": "Neighbour 5G",
+      "security": "wpa3",
+      "signal": 41,
+      "band": "2.4",
+      "channel": 13,
+      "bssids": 1,
+      "saved": false,
+      "in_use": false,
+      "supported": true,
+      "channel_permitted": false,
+      "region_suggestion": null
+    },
+    {
+      "ssid": "eduroam",
+      "security": "enterprise",
+      "signal": 38,
+      "band": "2.4",
+      "channel": 1,
+      "bssids": 3,
+      "saved": false,
+      "in_use": false,
+      "supported": true,
+      "channel_permitted": true,
+      "region_suggestion": null
+    },
+    {
+      "ssid": "OldRouter",
+      "security": "wep",
+      "signal": 22,
+      "band": "2.4",
+      "channel": 11,
+      "bssids": 1,
+      "saved": false,
+      "in_use": false,
+      "supported": false,
+      "channel_permitted": true,
+      "region_suggestion": null
+    }
+  ]
+}

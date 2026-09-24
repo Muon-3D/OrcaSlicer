@@ -1,0 +1,79 @@
+{
+  "languages": [
+    {
+      "code": "de",
+      "endonym": "Deutsch"
+    },
+    {
+      "code": "en",
+      "endonym": "English"
+    },
+    {
+      "code": "es",
+      "endonym": "Español"
+    },
+    {
+      "code": "fr",
+      "endonym": "Français"
+    },
+    {
+      "code": "it",
+      "endonym": "Italiano"
+    }
+  ],
+  "region": {
+    "market": "none",
+    "applied": {
+      "country": "00",
+      "config": null,
+      "declared": false
+    },
+    "default_country": null,
+    "permitted_channels": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "for_language": [],
+    "all": {},
+    "support_code": "M1-8987-7F2A"
+  },
+  "ready_manifest": {
+    "version": 1,
+    "items": [
+      {
+        "id": "transport_clips",
+        "kind": "confirm",
+        "required": true,
+        "title_key": "setup.ready.transport_clips.title",
+        "body_key": "setup.ready.transport_clips.body",
+        "image": "transport_clips.webp"
+      },
+      {
+        "id": "self_test",
+        "kind": "macro",
+        "required": true,
+        "macro": "MUON_SELF_TEST",
+        "est_seconds": 120,
+        "title_key": "setup.ready.self_test.title",
+        "body_key": "setup.ready.self_test.body"
+      },
+      {
+        "id": "load_filament",
+        "kind": "panel_flow",
+        "required": false,
+        "flow": "load_filament",
+        "title_key": "setup.ready.load_filament.title",
+        "body_key": "setup.ready.load_filament.body"
+      }
+    ]
+  }
+}

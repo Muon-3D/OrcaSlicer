@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "rev": 18,
+  "state": "complete",
+  "cursor": "finish",
+  "driver": null,
+  "op": null,
+  "printer": {
+    "name": "Walnut",
+    "display": "Walnut · 8987",
+    "hostname": "Muon-walnut-8987",
+    "fingerprint": "<fingerprint>"
+  },
+  "hotspot": {
+    "up": true,
+    "ssid": "Muon-walnut-8987",
+    "clients": 1,
+    "auto_off_at": 1790252700.0,
+    "address": "10.42.0.1"
+  },
+  "clock": {
+    "synced": true,
+    "source": "ntp",
+    "tz": "Europe/London",
+    "tz_source": "phone"
+  },
+  "region": {
+    "market": "picker",
+    "country": "GB",
+    "declared": true,
+    "config": "gb",
+    "source": "ap"
+  },
+  "capabilities": {
+    "ethernet": true,
+    "enterprise": true,
+    "cloud_link": true,
+    "self_hosted": false,
+    "bluetooth": false
+  },
+  "card_dismissed": false,
+  "steps": {
+    "language": {
+      "status": "done",
+      "value": "en",
+      "source": "panel"
+    },
+    "network": {
+      "status": "done",
+      "kind": "wifi",
+      "ssid": "HomeWiFi",
+      "addresses": [
+        "192.168.1.37"
+      ],
+      "hostname_local": "Muon-walnut-8987.local",
+      "internet": true,
+      "error": null
+    },
+    "name": {
+      "status": "done",
+      "value": "Walnut",
+      "derived": "walnut"
+    },
+    "update": {
+      "status": "skipped",
+      "current": "1.3.2",
+      "available": "1.4.0",
+      "error": null
+    },
+    "remote": {
+      "status": "skipped",
+      "mode": "later",
+      "link": null,
+      "error": null
+    },
+    "ready": {
+      "status": "skipped",
+      "items": [
+        {
+          "id": "transport_clips",
+          "status": "done",
+          "error": null
+        },
+        {
+          "id": "self_test",
+          "status": "pending",
+          "error": null
+        },
+        {
+          "id": "load_filament",
+          "status": "pending",
+          "error": null
+        }
+      ]
+    }
+  }
+}

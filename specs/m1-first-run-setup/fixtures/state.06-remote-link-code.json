@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "rev": 12,
+  "state": "in_progress",
+  "cursor": "remote",
+  "driver": {
+    "kind": "phone",
+    "client_id": "5b1f0c7e-9f7a-4f5e-8f0a-2d6f3c1a9b10",
+    "since": 1790251230.0,
+    "renewed": 1790251260.0,
+    "lapsed": false
+  },
+  "op": null,
+  "printer": {
+    "name": "Walnut",
+    "display": "Walnut · 8987",
+    "hostname": "Muon-walnut-8987",
+    "fingerprint": "<fingerprint>"
+  },
+  "hotspot": {
+    "up": true,
+    "ssid": "Muon-walnut-8987",
+    "clients": 1,
+    "auto_off_at": null,
+    "address": "10.42.0.1"
+  },
+  "clock": {
+    "synced": true,
+    "source": "ntp",
+    "tz": "Europe/London",
+    "tz_source": "phone"
+  },
+  "region": {
+    "market": "picker",
+    "country": "GB",
+    "declared": true,
+    "config": "gb",
+    "source": "ap"
+  },
+  "capabilities": {
+    "ethernet": true,
+    "enterprise": true,
+    "cloud_link": true,
+    "self_hosted": false,
+    "bluetooth": false
+  },
+  "card_dismissed": false,
+  "steps": {
+    "language": {
+      "status": "done",
+      "value": "en",
+      "source": "panel"
+    },
+    "network": {
+      "status": "done",
+      "kind": "wifi",
+      "ssid": "HomeWiFi",
+      "addresses": [
+        "192.168.1.37"
+      ],
+      "hostname_local": "Muon-walnut-8987.local",
+      "internet": true,
+      "error": null
+    },
+    "name": {
+      "status": "done",
+      "value": "Walnut",
+      "derived": "walnut"
+    },
+    "update": {
+      "status": "skipped",
+      "current": "1.3.2",
+      "available": "1.4.0",
+      "error": null
+    },
+    "remote": {
+      "status": "pending",
+      "mode": "cloud",
+      "error": null,
+      "link": {
+        "phase": "code",
+        "code": "482913",
+        "expires_at": 1790251620.0,
+        "claim_url": "https://app.muon3d.com/link?code=482913",
+        "account": null
+      }
+    },
+    "ready": {
+      "status": "pending",
+      "items": [
+        {
+          "id": "transport_clips",
+          "status": "pending",
+          "error": null
+        },
+        {
+          "id": "self_test",
+          "status": "pending",
+          "error": null
+        },
+        {
+          "id": "load_filament",
+          "status": "pending",
+          "error": null
+        }
+      ]
+    }
+  }
+}
