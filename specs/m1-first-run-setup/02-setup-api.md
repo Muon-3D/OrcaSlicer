@@ -10,14 +10,14 @@ The implementing agent must match these repo conventions. They were verified in 
 
 | Topic | Convention |
 |---|---|
-| Loading | A component loads only if its config section exists (`server.py:267-287`). Add `[muon_setup]` to `core/M1/moonraker.core.conf.template`. Load order is arbitrary, so look up `aux_api_proxy`, `database`, `klippy_apis`, `update_manager` and `machine` lazily at call time, or call `self.server.load_component(config, "aux_api_proxy")` in `__init__`. |
+| Loading | A component loads only if its config section exists (`server.py:267-287`). Add `[muon_setup]` to `core/M1/moonraker.core.conf.template`. Load order is arbitrary, so look up `aux_api_proxy`, `database`, `klippy_apis`, `muon_link` and `machine` lazily at call time, or call `self.server.load_component(config, "aux_api_proxy")` in `__init__`. |
 | Endpoints | `self.server.register_endpoint(path, ["GET"] or ["POST"], handler)`. Use one verb per path so each RPC name is simply the path with dots: `/server/muon/setup/network` becomes `server.muon.setup.network`. Leave `auth_required` at its default, because trusted clients already pass (SEC-1 Level 0). |
 | Notifications | `self.server.register_notification("muon_setup:muon_setup_changed")` in `__init__`, then `self.server.send_event("muon_setup:muon_setup_changed", state)`. Clients receive `{"method":"notify_muon_setup_changed","params":[state]}`. |
 | In-process events | `send_event("muon_setup:complete", state)` on finish, for other components through `register_event_handler`. |
 | Database | Moonraker SQLite at `/home/printer_data/database`. It survives reboots and OTA updates and is wiped by a factory reset (ID-2/ID-3). Register a **new** namespace with `database.register_local_namespace("muon_setup", forbidden=True)`. Don't register `"muon"` again, because `aux_api_proxy` already owns it and a second registration raises. |
 | Talking to Aux | Use the helpers on `aux_api_proxy` (`get()` / `post()`), which add `X-Aux-Api-Key` and map Aux errors. Don't make raw HTTP calls to `127.0.0.1:6789`. |
 | Startup | `component_init` must **not** raise if Aux is down. Register every endpoint in `__init__`. Endpoints that need Aux return `{"ok": false, "error": {"code": "aux_unavailable"}}` until Aux answers. `aux_api_proxy` currently fails to register identity when Aux is late; don't repeat that mistake ([10-work-plan.md MR-9](10-work-plan.md)). |
-| Floor | `muon_floor.py` only knows *loopback* and *network*. Add `/server/muon/setup/reset` to `FLOOR_PREFIXES` and extend `tests/test_muon_floor.py`. Every other rule in §3 is enforced inside this component. |
+| Floor | `muon_floor.py` only knows *loopback* and *network*. Add `/server/muon/setup/reset` to `FLOOR_PREFIXES` and extend `tests/test_muon_floor.py`. **Also add it to the 403 list in MuonOS's `fluidd.nginx.template`**: a MuonOS test requires the two lists to match. Every other rule in §3 is enforced inside this component. |
 | Tests | Plain pytest unit tests with hand-written fakes (`FakeServer`, `FakeConfig`, `FakeWebRequest`, a fake `database` with async `get_item`/`insert_item`/`delete_item`/`register_local_namespace`, and a fake `aux_api_proxy`). Run coroutines with `asyncio.run(...)`, as in `tests/test_aux_api_proxy.py`. CI runs flake8 (max line 88) and mypy over `moonraker`, so both must pass. |
 
 ## 2. Config
@@ -80,7 +80,7 @@ Any refused action returns HTTP 403 with the `ServerError` message `"muon_setup:
 - `10.42.0.1`
 - the printer's hostname, bare or with `.local`
 - `muon3d.local`
-- `localhost:100`
+- `localhost` (MuonUI on `:100`: nginx sends `Host $host`, which drops the port; its `Origin` is `http://localhost:100`)
 - one of the printer's current IP addresses
 
 If an `Origin` header is present, it must match the same set. Websocket JSON-RPC calls skip these checks, because Moonraker already checks the websocket origin. If `WebRequest` doesn't expose request headers, add a small `# MUON` accessor in `application.py` and cover it with a test.
@@ -89,7 +89,7 @@ If an `Origin` header is present, it must match the same set. Websocket JSON-RPC
 
 - **Namespace** `muon_setup`, **key** `state`: the whole state document in §6, minus the fields computed on read (`hotspot`, `clock`, `capabilities`).
 - **Write-through.** Persist before sending the change notification. Use `insert_item` and await it.
-- **Completion marker.** On `finish`, also write the KAN-203 marker so older MuonUI builds and MuonOS services agree ([03-printer-os.md §7](03-printer-os.md#7-completion-marker-and-factory-reset)).
+- **Completion marker.** On `finish`, also call Aux `POST /setup {complete: true, language, completed_at}`. This is #174's `/var/lib/muon3d/setup/setup.json` ([03-printer-os.md §7](03-printer-os.md#7-completion-marker-and-factory-reset)), and the OS hotspot rules read it. `muon_setup` reads `GET /setup` only in the migration check. Once `muon_setup` has state of its own, that state is authoritative, so a development `reset` works even though the marker can't be un-completed.
 - **First start with no stored state.** Run the migration check in [01-flow.md §7](01-flow.md#7-printers-already-in-the-field) before creating a `new` state.
 - **Schema version.** `"version": 1`. Load an unknown version as read-only, log it, and treat it as `complete`, so a downgrade never re-runs setup.
 
@@ -115,27 +115,21 @@ Returns the state document (§6). Every change also goes out as `notify_muon_set
 
 ### 5.2 `GET /server/muon/setup/options` · `server.muon.setup.options`
 
-Query `country` (optional) adds that country's time zones. Query `language` (optional, defaults to `steps.language.value`) orders the picker's second tier.
+The optional `country` query adds that country's time zones.
 
 ```jsonc
 {
   "languages": [ { "code": "en", "endonym": "English" }, { "code": "de", "endonym": "Deutsch" } ],
-  "region": {
-    "market": "picker",                     // picker | locked (token configs == ["us"]) | none (no valid token)
-    "applied": { "country": "DE", "config": "de", "declared": false },   // from Aux GET /region
-    "default_country": "DE",                // from the token; may be null
-    "permitted_channels": [1,2,3,4,5,6,7,8,9,10,11,12,13,36,40,44,48],
-    "for_language": ["DE", "AT", "CH"],     // picker tier 2, ordered by speaker count
-    "all": { "Europe": ["AT","BE","…"], "Americas": ["CA","…"] },     // picker tier 3, offered countries only
-    "support_code": null                    // set when market == none ("needs re-registering")
-  },
-  "timezones": ["Europe/London"],           // only with ?country=
+  "region": { "countries": ["AT","BE","CH","DE","FR","GB","IE","…"],   // Aux GET /region/options, verbatim
+              "preselect": "GB", "basis": "plurality", "locked": false },
+  "timezones": ["Europe/London"],                                       // only with ?country=
   "ready_manifest": { "version": 1, "items": [ … ] }
 }
 ```
 
-- **Region data** comes from Aux `GET /region` and `GET /region/options` (KAN-321 Rev 11). `muon_setup` never keeps its own country list.
-- **Time zones** come from the image's tzdata (`/usr/share/zoneinfo/zone1970.tab`). Order them so the most populous zone is first; `zone1970.tab` already lists a country's principal zone first.
+- **`region`** is Aux `GET /region/options` (MuonOS#174), passed through unchanged. `muon_setup` never keeps its own country list.
+- **Picker tier 2 is built by each surface,** from MuonUI#31's `SPOKEN_IN` and `Intl.DisplayNames` (`regionCountries.ts`, ported to Fluidd). That's "countries where this language is spoken", ordered by speakers.
+- **Time zones** come from the image's tzdata, `/usr/share/zoneinfo/zone1970.tab`, most populous first.
 
 ### 5.3 Language
 
@@ -162,8 +156,7 @@ Query `country` (optional) adds that country's time zones. Query `language` (opt
 
 `GET /server/muon/setup/networks?rescan=true` · `server.muon.setup.networks`
 
-- Scans synchronously, with a 15 s cap, through Aux `GET /wifi/scan?rescan=1`. Under an undeclared domain, Aux widens to `00` and scans passively (Rev 11).
-- Normalises the result and adds a region suggestion to each network:
+**Scanning.** It scans synchronously, with a 15 s cap, through Aux `GET /wifi/scan?rescan=true`. It then normalises the result:
 
 ```json
 {
@@ -172,28 +165,25 @@ Query `country` (optional) adds that country's time zones. Query `language` (opt
   "ethernet": { "present": true, "carrier": false, "address": null },
   "networks": [
     { "ssid": "HomeWiFi", "security": "wpa2", "signal": 78, "band": "2.4", "channel": 6,
-      "bssids": 2, "saved": false, "in_use": false, "supported": true,
-      "channel_permitted": true,
-      "region_suggestion": { "country": "GB", "source": "ap" } }   // ap | neighbours | default | null
+      "bssids": 2, "saved": false, "in_use": false, "supported": true, "channel_permitted": true }
   ]
 }
 ```
 
-- **Normalising:**
-  - Drop empty SSIDs; hidden networks go through "Other network…".
-  - Drop the printer's own hotspot SSID.
-  - Merge entries with the same SSID. Keep the strongest signal, count the BSSIDs, and report the band and channel of the strongest.
-  - Sort by signal, strongest first.
-- **Security values:** `open`, `owe`, `wep`, `wpa2`, `wpa3`, `wpa2_wpa3`, `enterprise`. `wep` has `supported: false`.
-- **`channel_permitted`** checks the network's channel against `region.permitted_channels` for the *suggested* country's configuration, or the applied one if there's no suggestion.
-- **`region_suggestion`** follows the Rev 11 order:
-  1. the network's own country element (`ap`);
-  2. the neighbours' plurality, where at least 3 must name a country and it must lead by at least 2 (`neighbours`);
-  3. the token's `default_country` (`default`).
+**Normalising:**
 
-  Every source is filtered through the token.
-  - Use Aux's own resolver, the one behind the connect-time prompt in `WifiManagerView`.
-  - If Aux doesn't expose it per network, add `GET /region/suggest?ssid=` to Aux ([03-printer-os.md §3](03-printer-os.md#3-region-time-zone-and-clock)) rather than parsing country elements in Moonraker.
+- Drop empty SSIDs; hidden networks go through "Other network…".
+- Drop the printer's own hotspot SSID.
+- Merge entries with the same SSID. Keep the strongest signal, count the BSSIDs, and report the band and channel of the strongest.
+- Sort by signal, strongest first.
+
+**Fields:**
+
+- **`security`** is one of `open`, `owe`, `wep`, `wpa2`, `wpa3`, `wpa2_wpa3`, `enterprise`. `wep` has `supported: false`.
+- **`saved`** comes from Aux `GET /wifi/saved` (MuonOS#210). Until that lands, it's `false`.
+- **`channel_permitted`** is `true` when `state.region.channels` is empty (no configuration applied yet) or contains the network's channel.
+  - Surfaces decide what to do with a network that isn't permitted: they run MuonUI#31's `regionPromptFor(state.region, channel)`, which gives `join`, `offer-switch` or `locked`.
+  - **No network carries a country suggestion before joining.** Aux doesn't expose each network's country element, so the region is confirmed after the join (§5.6a).
 
 ### 5.6 Joining a network
 
@@ -203,10 +193,10 @@ Query `country` (optional) adds that country's time zones. Query `language` (opt
 { "rev": 7, "kind": "wifi",
   "ssid": "HomeWiFi", "hidden": false, "security": "wpa2",
   "psk": "correct horse battery staple",
-  "region": "GB",                 // the country the owner confirmed on the region line; omitted on locked units
+  "region": null,                 // set only when the owner accepted "Change your printer's region?" before joining
   "eap": null }
 // Enterprise:
-{ "rev": 7, "kind": "wifi", "ssid": "eduroam", "hidden": false, "security": "enterprise", "region": "GB",
+{ "rev": 7, "kind": "wifi", "ssid": "eduroam", "hidden": false, "security": "enterprise",
   "eap": { "method": "peap", "phase2": "mschapv2", "identity": "ab123@uni.ac.uk",
            "anonymous_identity": "anonymous@uni.ac.uk", "password": "…",
            "ca_cert_id": "c_1f2e", "domain_suffix_match": "uni.ac.uk", "no_ca_check": false } }
@@ -218,29 +208,53 @@ Query `country` (optional) adds that country's time zones. Query `language` (opt
 
 1. **Validate the request.**
    - `ssid` must be 1–32 bytes UTF-8.
-   - `region` is required when `region.market == "picker"` and no country is declared yet (`region_required`). It must be offered by the token (`region_not_offered`).
+   - `region`, if given, must be in `options.region.countries` (`region_not_offered`).
+   - `hidden` and `security` hints need new Aux work (03 §4, W1). Until that lands, `hidden: true` returns `unsupported_security`.
    - A `psk` must be 8–63 characters, or exactly 64 hex characters. `open` and `owe` take no psk.
    - For `enterprise`, `method` must be `peap` or `ttls`, `phase2` must be `mschapv2` or `pap`, and `identity` and `password` are required. Either `ca_cert_id` or `no_ca_check: true` is required.
    - Any violation gives `invalid_network`, with `detail.field` naming the field.
 2. **Start the operation.** The HTTP response comes back immediately with `ok: true` and the state showing `op`.
-3. **Apply the region if needed.** If `region` differs from `region.applied.country`, or no country has been declared yet:
-   - Set `op = {kind: "region_apply"}` and call Aux `POST /region/country`.
-   - This is live and takes about 8 s. All Wi-Fi goes down, the **hotspot** included, and comes back.
-   - Aux failures map as follows:
-     - `busy` → `region_busy`;
-     - a read-back mismatch → `region_apply_failed`;
-     - a country not in the token → `region_not_offered`;
-     - no valid token → `needs_reregistration`.
-
-     Stop there on failure. Nothing is declared.
-   - If, after the apply, `permitted_channels` doesn't include the network's channel, stop with `channel_not_permitted`.
-4. **Join through Aux** ([03-printer-os.md §4](03-printer-os.md#4-wi-fi-join)). Set `op = {kind: "join", phase: "saving"}` and move `op.phase` through `saving` → `associating` → `authenticating` → `dhcp` → `internet_check` → `update_check`. Notify on each change.
+3. **Switch the region first, if asked.** When `region` is set, run the region apply in §5.6a before joining. Stop there if it fails.
+4. **Join through Aux** ([03-printer-os.md §4](03-printer-os.md#4-wi-fi-join)). Set `op = {kind: "join", phase: "saving"}` and move `op.phase` through `saving` → `associating` → `authenticating` → `dhcp` → `internet_check` → `update_check`, notifying on each change. Treat Aux's `200 {"status": "restored"}` and any 400 as a failed join, and take the reason from `state_reason`'s numeric prefix.
 5. **Success means an IPv4 address on the uplink.** Set:
-   - `network = {status: "done", kind, ssid, addresses: [...], hostname_local: "<hostname>.local", internet: true|false|"portal", error: null}`;
+   - `network = {kind, ssid, addresses: [...], hostname_local: "<hostname>.local", internet: true|false|"portal", error: null, region_confirmed}`;
+   - `region_confirmed` is `true` when the market is `locked` or `none`, or when `declared_country` is already set and equals `detected_country`. Otherwise it's `false`.
+   - `network.status` becomes `done` only when `region_confirmed` is `true`. Until then the cursor stays on `network`, and surfaces show the region line (§5.6a).
    - `update.status` to `pending` only if the internet check passed, an update exists and the clock is synced. Otherwise it is `hidden`.
 6. **Failure.** `network.error = {code, at_phase}`, the step stays `pending`, `op` is cleared, and nothing is kept: the Aux connection profile is deleted. The codes are `wrong_password`, `ssid_not_found`, `no_address`, `timeout`, `eap_failed`, `cert_invalid` and `unsupported_security`.
 7. **`internet: "portal"`** (a guest network with a web sign-in page) is still `done`, because the address works on the LAN. It carries `error: {code: "portal_required"}` so the surfaces can warn and offer "Choose another network".
 8. **Never store or echo secrets.** `psk` and `eap.password` are never persisted by `muon_setup`, never logged (redact them in any debug dump), and never put in state or events. Only NetworkManager keeps them.
+
+#### 5.6a Region confirmation
+
+This follows KAN-321 Rev 11 and MuonUI#31: the region comes from the network the printer has joined.
+
+`POST /server/muon/setup/region` with `{ "rev": 8, "country": "GB" }`.
+
+**What happens:**
+
+1. **Validate.** `country` must be in `options.region.countries`, otherwise `region_not_offered`.
+2. **Apply.** Set `op = {kind: "region_apply"}` and call Aux `POST /region/country {country}`.
+   - Use a 60 s timeout; `aux_api_proxy`'s `post()` needs a timeout parameter for this.
+   - The apply is live and takes about 8 s. Every Wi-Fi profile goes down and comes back, **the hotspot included**.
+   - Aux records the declaration only when the apply succeeds.
+3. **Map failures** from the `detail.code` values OS-2 adds (the region agent's `OUTCOMES` names):
+
+   | Aux code | `muon_setup` code |
+   |---|---|
+   | `country-not-in-token` | `region_not_offered` |
+   | `no-token`, `unreadable-token`, `bad-token-format`, `bad-signature`, `unknown-serial`, `serial-mismatch`, `no-signing-key` | `needs_reregistration` |
+   | `apply-failed`, `intersected`, `readback-mismatch` | `region_apply_failed` |
+   | `busy` | `region_busy` |
+   | 504 | Re-read `GET /region` before deciding |
+
+   On failure nothing is declared, and `network.region_confirmed` stays `false`.
+4. **Success.** Re-read `GET /region`, set `network.region_confirmed = true` and `network.status = done`, then move the cursor on.
+
+**Also:**
+
+- **Called while `network` is still pending**, the endpoint only applies the region; `region_confirmed` is set by the join. This is the "switch before joining" case.
+- **Until OS-2 lands** stable codes, Aux returns free text. Map it by substring, and fall back to `region_apply_failed`.
 
 `POST /server/muon/setup/network/cancel` with `{}`: cancels a running join. The partial profile is removed.
 
@@ -266,14 +280,14 @@ Query `country` (optional) adds that country's time zones. Query `language` (opt
 - **`later`** marks the step `skipped`.
 - **`install`** runs these steps:
   1. Store `op = {kind: "update_install", target: "<version>"}`.
-  2. Call `update_manager`'s upgrade path for `MuonOS`, the same as `POST /machine/update/upgrade?name=MuonOS`.
-  3. Mirror its `update_manager:update_response` progress into `op.progress` (0–1).
+  2. Start the install through Aux `POST /update/install`, using `aux_api_proxy`'s `ota_start()`. This is the same route the panel's `updateStore` uses, so the panel's existing `UpdatingOverlay` (KAN-215) and rollback notice keep working.
+  3. Mirror Aux `GET /update/status` progress into `op.progress` (0–1).
   4. The printer reboots into the new slot.
-- **After the reboot**, `muon_setup` compares `update_manager`'s `version` with `op.target`:
+- **After the reboot**, `muon_setup` compares Aux's `current_version` with `op.target`:
   - equal: the step is `done`;
   - otherwise it rolled back: the step is `pending` with `error: {code: "update_failed"}`.
 - `muon_setup` doesn't commit the update itself. It follows the existing OTA commit policy (KAN-358).
-- `update_manager` refuses while a print is running (503). Pass that on as `printer_busy`.
+- Aux refuses while a print is running. Pass that on as `printer_busy`.
 
 ### 5.9 Remote access
 
@@ -372,7 +386,7 @@ MuonOS ships the manifest at `ready_manifest` (`/usr/share/muon/setup/ready.json
 | `POST /server/muon/setup/skip` | `{ "rev": n, "step": "network"\|"update"\|"remote"\|"ready" }` | Marks the step `skipped`. `language` gives `not_skippable`. |
 | `POST /server/muon/setup/finish` | `{ "rev": n }` | Requires `language` to be `done`, otherwise `required_steps_pending`. Remaining `pending` optional steps become `skipped`. Then `state = complete`, the marker is written, `muon_setup:complete` fires, and the hotspot auto-off is scheduled ([03-printer-os.md §1](03-printer-os.md#1-hotspot-lifecycle)). |
 | `POST /server/muon/setup/card/dismiss` | `{ "rev": n }` | `card_dismissed = true` |
-| `POST /server/muon/setup/reset` | `{}` | Panel only and floored. Clears the namespace and the marker, and starts over as `new`. For development and support; a real factory reset clears the database anyway (ADR 0005). |
+| `POST /server/muon/setup/reset` | `{}` | Panel only and floored. Clears the `muon_setup` namespace and starts over as `new`. The marker can't be un-completed (#174), but `muon_setup`'s own state takes precedence over it. For development and support; a real factory reset clears everything (ADR 0005). |
 
 ## 6. State document
 
@@ -392,15 +406,19 @@ MuonOS ships the manifest at `ready_manifest` (`/usr/share/muon/setup/ready.json
                "auto_off_at": null, "address": "10.42.0.1" },         // computed on read
   "clock": { "synced": false, "source": "fake_hwclock",              // fake_hwclock | phone | ntp; computed
              "tz": "Europe/London", "tz_source": "phone" },         // phone | owner | region | default
-  "region": { "market": "picker", "country": "GB", "declared": true, "config": "gb",
-              "source": "ap" },                                     // from Aux GET /region; computed
+  "region": { "market": "picker",                                   // derived: none | locked | picker
+              "reason": "…", "declared_country": "GB", "configuration": "gb", "domain": "GB",
+              "surroundings": "settled", "detected_country": "GB", "basis": "joined-network",
+              "locked": false, "channels": [1,2,3,4,5,6,7,8,9,10,11,12,13,36,40,44,48] },
+                                                                    // Aux GET /region verbatim + market; computed
   "capabilities": { "ethernet": true, "enterprise": true, "cloud_link": true,
                     "self_hosted": false, "bluetooth": false },       // computed
   "card_dismissed": false,
   "steps": {
     "language": { "status": "done",    "value": "en", "source": "panel" },
     "network":  { "status": "pending", "kind": null, "ssid": null, "addresses": [],
-                  "hostname_local": null, "internet": null, "error": null },
+                  "hostname_local": null, "internet": null, "error": null,
+                  "region_confirmed": false },
     "name":     { "status": "pending", "value": "Walnut", "derived": "walnut" },
     "update":   { "status": "hidden",  "current": "1.3.2", "available": null, "error": null },
     "remote":   { "status": "pending", "mode": null, "link": null, "error": null },
@@ -423,9 +441,9 @@ MuonOS ships the manifest at `ready_manifest` (`/usr/share/muon/setup/ready.json
 
 ## 8. Tests (minimum)
 
-Add `tests/test_muon_setup.py` with fakes for `database`, `aux_api_proxy`, `klippy_apis` and `update_manager`, covering:
+Add `tests/test_muon_setup.py` with fakes for `database`, `aux_api_proxy` and `klippy_apis`, covering:
 
-1. A fresh start with no marker gives `new` and cursor `language`. A fresh start where the marker exists, or a saved Wi-Fi exists, gives `complete` with `source: "migrated"`.
+1. A fresh start with no marker gives `new` and cursor `language`. A fresh start gives `complete` with `source: "migrated"` when the marker exists, or when a saved Wi-Fi profile exists other than the hotspot and the dev image's baked `Muon3D_Dev` profile.
 2. The order rules:
    - `goto` forward past the first pending step gives `invalid_step`.
    - Skipping `language` gives `not_skippable`.
@@ -438,11 +456,12 @@ Add `tests/test_muon_setup.py` with fakes for `database`, `aux_api_proxy`, `klip
 7. Access: build the §3 table as a parametrised test over caller kinds × endpoints.
 8. `finish` marks pending optional steps as `skipped`, writes the marker, fires `muon_setup:complete`, and asks Aux for the hotspot auto-off.
 9. Region:
-   - A join with a `region` that differs from the applied country calls `POST /region/country` before `/wifi/connect`.
+   - After a join in a `picker` market, `network` stays `pending` with `region_confirmed: false`. `POST region` then declares the country and marks the step done.
+   - A join with `region` set calls `POST /region/country` before `/wifi/connect`.
+   - Aux `status: "restored"` counts as a failed join.
    - Aux `busy`, a read-back mismatch, a country not offered and a missing token each map to their codes, and none of them declares anything.
    - A channel not permitted after the apply gives `channel_not_permitted`.
-   - `region` is required only in `picker` markets with nothing declared yet.
-10. Markets: a `locked` market needs no `region` in the join, and `none` passes through `needs_reregistration`. Neither blocks a join on a permitted channel.
+10. Markets: `locked` and `none` set `region_confirmed: true` on join. `none` is derived from `countries == []`, and `locked` from `locked == true`.
 11. The update step: a version that matches the target after the reboot is `done`, and a rollback gives `update_failed`.
 12. Remote `cloud`:
     - codes renew once the clock passes `expires_at`, and stop after `goto` away or `remote/cancel`;

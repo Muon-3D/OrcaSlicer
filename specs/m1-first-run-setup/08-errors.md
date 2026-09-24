@@ -28,12 +28,11 @@ Every error screen has **one primary action**. On the panel that is the press; o
 
 | Code | When | Copy (both surfaces) | Primary / secondary |
 |---|---|---|---|
-| `region_required` | Joining in a `picker` market with no country declared or chosen | "Choose the printer's region first." | Choose region |
-| `region_not_offered` | The country isn't in the token | "This printer is not registered for that country." (Rev 11) | Choose another region |
-| `region_apply_failed` | The Aux read-back gate failed | "We could not apply that region." (Rev 11) | Try again / Choose another region. After 2 failures: Save a diagnostic bundle (KAN-378) |
+| `region_not_offered` | Aux `country-not-in-token` | "This printer is not registered for that country." (Rev 11) | Choose another region |
+| `region_apply_failed` | Aux `apply-failed`, `intersected` or `readback-mismatch` | "We could not apply that region." (Rev 11) | Try again / Choose another region. After 2 failures: Save a diagnostic bundle (KAN-378) |
 | `region_busy` | Aux reports `busy` | "The Wi-Fi radio is busy. Trying again…" (retried automatically once after 3 s) | Try again |
-| `needs_reregistration` | No valid market token | "This printer needs re-registering. Support code: {code}" (Rev 11) | Continue (channels 1–11 still work) |
-| `channel_not_permitted` | The chosen network's channel isn't allowed | "That network is on a channel your printer is not set for." A locked unit adds "This printer is set for the United States. Contact support." | Choose another network |
+| `needs_reregistration` | Aux `no-token`, `unreadable-token`, `bad-token-format`, `bad-signature`, `unknown-serial`, `serial-mismatch` or `no-signing-key`. Today every unit is `no-signing-key`. | "This printer needs re-registering." (Rev 11) | Continue (channels 1–11 still work) |
+| `channel_not_permitted` | After a switch, the chosen network's channel still isn't allowed. Before joining, `regionPromptFor` handles this. | "That network is on a channel your printer is not set for." A locked unit adds "This printer is set for the United States. Contact support." | Choose another network |
 | `invalid_timezone` | The zone isn't valid for the country | – (the lists only offer valid ones) | – |
 | `invalid_clock` | `epoch_ms` is before the image build | – (silent; logged) | – |
 | `clock_unsynced` | `update` or `remote: cloud` without a synced clock | "{name} hasn't got the time from the internet yet." | Try again (after 5 s) / Continue without |

@@ -32,10 +32,33 @@
   },
   "region": {
     "market": "picker",
-    "country": "DE",
-    "declared": false,
-    "config": "de",
-    "source": "default"
+    "reason": "declared",
+    "declared_country": null,
+    "configuration": "de",
+    "domain": "DE",
+    "surroundings": "offer",
+    "detected_country": "GB",
+    "basis": "plurality",
+    "locked": false,
+    "channels": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      36,
+      40,
+      44,
+      48
+    ]
   },
   "capabilities": {
     "ethernet": true,
@@ -58,7 +81,8 @@
       "addresses": [],
       "hostname_local": null,
       "internet": null,
-      "error": null
+      "error": null,
+      "region_confirmed": false
     },
     "name": {
       "status": "pending",

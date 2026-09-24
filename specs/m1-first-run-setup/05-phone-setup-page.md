@@ -58,10 +58,10 @@ Which screen shows is a pure function of the state (§5). The page keeps no step
 |---|---|---|---|
 | **S0 Connecting** | No state has arrived yet | Spinner. "Connecting to your printer…" After 10 s: "Make sure this phone is still on the Wi-Fi network *Muon-…*." | – |
 | **S1 Start** | `state` is `new` or `in_progress` and the page hasn't claimed the driver | "Set up Walnut · 8987". "About three minutes. Your phone stays connected to the printer until the end, then goes back to your usual Wi-Fi." | **Start** posts `clock` with `Date.now()` and `Intl.DateTimeFormat().resolvedOptions().timeZone` (hotspot origin only, §6), then posts `language` if that step is still pending, then claims `driver=phone`. |
-| **S3 Wi-Fi** | cursor = `network`, no `op` | "Choose Wi-Fi". Networks come from `GET …/networks`, and the page rescans on entry and on pull-down or the "Scan again" button. Each row shows the SSID, a lock, signal bars and "Saved" if saved. Tapping a network expands the row inline. Secured networks get a password field (`type=password`, `autocomplete="off"`, `autocapitalize="off"`, `spellcheck="false"`) with Show/Hide. Every expanded row, open networks included, shows the **region line** (§3.1) and **Connect**. A network with `channel_permitted: false` shows "Not available in this region" instead of Connect (§3.1). Enterprise rows open S3b. WEP rows are disabled with "Not supported". Below the list: **Other network…** (S3b), and **Skip for now** with the confirm "Walnut will stay offline. You can connect it later from its screen." Ethernet with an address shows a top card, "Connected by cable · 192.168.1.37", with **Use this connection**. | Connect posts `network`. |
-| **S3b Other network** | From S3 | Fields: SSID, the region line (§3.1, with the applied or default country, since there's no scan result to suggest from), and Security (None / WPA2/WPA3 Personal / WPA2/WPA3 Enterprise). Personal adds the password. Enterprise adds EAP method (PEAP, TTLS), inner method (MSCHAPv2, PAP), identity, password, anonymous identity (optional), CA certificate (upload a `.pem`/`.crt`/`.der` → `network/ca_cert`) or "Don't check the certificate (not recommended)", and domain (optional, shown when a CA is given). | **Connect** |
-| **S4 Joining** | `op.kind` is `region_apply` or `join` | "Joining HomeWiFi". A checklist following `op`: *Setting the region* (only when an apply runs), *Password accepted* (after `authenticating`), *Got an address · 192.168.1.37*, *Checking internet*, *Checking for updates*. It warns **before** Connect and repeats here: "Your phone will drop off Walnut's Wi-Fi for a few seconds, maybe twice, while the printer sets its region and changes channel. Keep this page open; if it closes, rejoin *Muon-walnut-8987* and it picks up where it left off." | **Cancel** (`network/cancel`), only during `join` |
-| **S4r Result** | `network.status` becomes `done`, or `network.error` is set | **Success:** "Walnut is on HomeWiFi", plus the address and hostname. `internet: false` adds the note "No internet. Printing over the network works; updates and remote access are off." `portal_required` gives a warning card with **Choose another network**. **Failure:** the error copy from [08-errors.md](08-errors.md), the password field again with the text visible for `wrong_password`, and **Try again** / **Choose another network**. | Continue |
+| **S3 Wi-Fi** | cursor = `network`, no `op` | "Choose Wi-Fi". Networks come from `GET …/networks`, and the page rescans on entry and on pull-down or the "Scan again" button. Each row shows the SSID, a lock, signal bars and "Saved" if saved. Tapping a network expands the row inline. Secured networks get a password field (`type=password`, `autocomplete="off"`, `autocapitalize="off"`, `spellcheck="false"`) with Show/Hide, and then **Connect**. A network with `channel_permitted: false` runs the pre-join region check first (§3.1). Enterprise rows open S3b. WEP rows are disabled with "Not supported". Below the list: **Other network…** (S3b), and **Skip for now** with the confirm "Walnut will stay offline. You can connect it later from its screen." Ethernet with an address shows a top card, "Connected by cable · 192.168.1.37", with **Use this connection**. | Connect posts `network`. |
+| **S3b Other network** | From S3 | Fields: SSID, and Security (None / WPA2/WPA3 Personal / WPA2/WPA3 Enterprise). Personal adds the password. Enterprise adds EAP method (PEAP, TTLS), inner method (MSCHAPv2, PAP), identity, password, anonymous identity (optional), CA certificate (upload a `.pem`/`.crt`/`.der` → `network/ca_cert`) or "Don't check the certificate (not recommended)", and domain (optional, shown when a CA is given). | **Connect** |
+| **S4 Joining** | `op.kind` is `region_apply` or `join` | "Joining HomeWiFi". A checklist following `op`: *Setting the region* (only when an apply runs), *Password accepted* (after `authenticating`), *Got an address · 192.168.1.37*, *Checking internet*, *Checking for updates*. It warns **before** Connect and repeats here: "Your phone may drop off Walnut's Wi-Fi for a few seconds while the printer changes channel. Keep this page open; if it closes, rejoin *Muon-walnut-8987* and it picks up where it left off." | **Cancel** (`network/cancel`), only during `join` |
+| **S4r Result** | The join finished (`network.addresses` set), or `network.error` is set | **Success:** "Walnut is on HomeWiFi", plus the address and hostname, then the **region line** (§3.1) while `network.region_confirmed` is `false`. `internet: false` adds the note "No internet. Printing over the network works; updates and remote access are off." `portal_required` gives a warning card with **Choose another network**. **Failure:** the error copy from [08-errors.md](08-errors.md), the password field again with the text visible for `wrong_password`, and **Try again** / **Choose another network**. | Continue |
 | **S5 Finish** | cursor is `name`, `update` or `remote` | One page, as in mockup 6. **Name**: a text field pre-filled with `name.value`, max 32. **Update**, only if `update.status == pending`: "Update available · 1.4" with **Install now** / **Later**. **Remote access**: "Keep it on my network" (default) or "Link a Muon account", each with its one-line explanation, ("My own server" isn't offered in phase 1). | **Continue** posts `name`, then `update: later` if the update wasn't installed, then `remote`, in that order. Each post uses the `rev` returned by the one before. |
 | **S5u Updating** | `op.kind == "update_install"` | Progress bar from `op.progress`, and "Walnut will restart. This page reconnects by itself." | – |
 | **S6 Link** | `remote.mode == "cloud"` and the step isn't done | Renders `remote.link` (muon-link's `LinkPhase`). **`connecting`:** "Getting a code…". **`code`:** the code in big mono digits, updating live as codes renew, with "Enter this code at **app.muon3d.com** on any phone or computer that's online, then confirm on Walnut's screen." A plain link opens `remote.link.url` (no `target`, because of the captive-portal window). **`offer`:** "Confirm on Walnut's screen" and the account. **`linked`:** ✓ "Linked to {account}". **`failed`:** the `link_failed` copy. | **Do this later** posts `remote: later`. |
@@ -70,22 +70,33 @@ Which screen shows is a pure function of the state (§5). The page keeps no step
 | **S9 Following the panel** | `driver.kind == "panel"` and not lapsed | "Walnut's screen is in charge" with the current step name. | **Continue here** claims the driver. |
 | **S10 Set up already** | `state == complete` and the page didn't drive setup (e.g. the hotspot fallback, E5) | "Walnut is set up". The network status shows `network.ssid`, or "Not connected" in recovery mode. | **Change Wi-Fi** runs S3/S4 against the complete state. **Open Walnut** is a link. |
 
-### 3.1 The region line
+### 3.1 Region
 
-This follows KAN-321 Rev 11 and mirrors panel screen P5b ([04-panel.md](04-panel.md#p5b--join-and-region-b)).
+This follows KAN-321 Rev 11 and mirrors MuonUI#31 and panel screens P4 and P7a ([04-panel.md](04-panel.md#p7a--region-b)). Port #31's helpers into `src/services/muon-setup/region.ts`:
 
-- **Content.** "Region: **United Kingdom** · Change", under the password field.
-  - The country is the network's `region_suggestion.country`.
-  - With `source: "default"`, it reads "Region: Germany · Is this right? Change".
-  - With no suggestion, it reads "Region: **Choose…**", and Connect stays disabled until a country is chosen.
+- `regionPromptFor(region, channel)` → `join | offer-switch | locked`;
+- `SPOKEN_IN`;
+- country names from `Intl.DisplayNames`.
+
+**Before joining.** If a network's `channel_permitted` is `false`, run `regionPromptFor(state.region, network.channel)`:
+
+| Result | What the page does |
+|---|---|
+| `join` | Nothing extra |
+| `offer-switch` | An inline card, "Change your printer's region?", with **Change region** (join with `region` set to `state.region.detected_country`) and **Not now** |
+| `locked` | "This printer is set for the United States. Contact support." |
+
+**After joining** (S4r, while `network.region_confirmed` is `false`):
+
+- **Content:** "Region: **United Kingdom**", taken from `state.region.detected_country` (basis `joined-network`) or else `options.region.preselect`. Then **Confirm** and **Change**.
 - **Change** opens a bottom sheet with three sections:
-  1. "Detected", if there is a detection.
-  2. "Where <language> is spoken" (`region.for_language`).
-  3. "All countries", grouped by continent and filterable with a search box. The box only filters the offered list; there is no free text.
-- **Hidden** when `region.market == "locked"`, or when a country is declared and matches the suggestion.
-- **`market == "none"`.** A one-time notice at the top of S3: "This printer needs re-registering. Support code: XXXX." Joining still works on channels 1–11.
-- **Connect** posts `network` with `region`. Pressing Connect with the line visible is the owner's confirmation. Record nothing more.
-- **Channel not permitted.** A row whose `channel_permitted` is false shows "That network is on a channel your printer is not set for." Locked units add "This printer is set for the United States. Contact support."
+  1. the detected country;
+  2. "Where <language> is spoken" (`SPOKEN_IN`);
+  3. "All countries", sorted by name, with a search box that filters `options.region.countries`. There's no free text.
+- **Confirm, or picking a country,** posts `region {country}`. The page then shows "Applying… Walnut's Wi-Fi will drop for about 8 seconds" and waits for the state, using the reconnect rules in §4.
+- **Skipped entirely** in `locked` and `none` markets.
+
+**Market `none`.** A one-time notice at the top of S3: "This printer needs re-registering." Joining still works on channels 1–11.
 
 **Every screen:**
 
@@ -155,7 +166,7 @@ Selection is a pure function, `screenFor(state, local) -> ScreenId`, in `src/ser
 5. The page hasn't claimed the driver yet → S1.
 6. Otherwise, by `cursor`:
    - `language` → S1 (unreachable after Start, which posts the language);
-   - `network` → S3, or S4r if a result is still unacknowledged;
+   - `network` → S4r while the join has finished but `network.region_confirmed` is `false` (the region line), or while a result is still unacknowledged; otherwise S3;
    - `name`, `update` or `remote` → S5, or S6 if `remote.mode == "cloud"`;
    - `ready` → S7;
    - `finish` → S8.
@@ -209,7 +220,7 @@ In `src/views/Dashboard.vue`, add a `v-alert`-style banner above the cards. It r
 |---|---|
 | `screen.spec.ts` | `screenFor` over fixture states, one per row of §3, plus `stale_rev`, a lapsed driver and a complete state with the Wi-Fi change flag. |
 | `client.spec.ts` | Uses `vi.useFakeTimers()`, a fake `WebSocket` and a stubbed `fetch`. Covers: reconnect every 1 s; a `GET` after reconnect; polling while down; a lost write that is then resolved by the state; driver renewal only while visible; `rev` ordering, where an older notification is ignored. |
-| `Setup.spec.ts` | `shallowMount` with `$t: k => k`. Covers: every variant of the region line (`ap`, `neighbours`, `default`, no suggestion, locked, `none`, channel not permitted); Start posting clock and time zone only on `10.42.0.1`; S3 never persisting a password; S5 posting in order and passing each returned `rev` on. |
+| `Setup.spec.ts` | `shallowMount` with `$t: k => k`. Covers: `regionPromptFor` results before joining (`join`, `offer-switch`, `locked`); the region line after joining, from `joined-network` and from `preselect`; the `locked` and `none` markets; Start posting clock and time zone only on `10.42.0.1`; S3 never persisting a password; S5 posting in order and passing each returned `rev` on. |
 | `managed-path.spec.ts` | `/setup` is chrome-less. |
 | Router test | `router.resolve('/setup')` resolves to `name: 'setup'` with `meta.printerIndependent`. |
 | E2E (Playwright, `/opt/pw-browsers/chromium`) | Against a mock `muon_setup` server (a small Node script in `tests/e2e/mock-setup-server.mjs` that serves the fixture states and scripted `op` progress). Covers the happy path, a wrong password, a dropped connection mid-join (the server drops the WebSocket for 8 s), `stale_rev`, and the link code renewing. |

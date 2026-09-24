@@ -17,11 +17,7 @@
       "saved": false,
       "in_use": false,
       "supported": true,
-      "channel_permitted": true,
-      "region_suggestion": {
-        "country": "GB",
-        "source": "ap"
-      }
+      "channel_permitted": true
     },
     {
       "ssid": "BT-Hub-8JX2",
@@ -33,11 +29,7 @@
       "saved": false,
       "in_use": false,
       "supported": true,
-      "channel_permitted": true,
-      "region_suggestion": {
-        "country": "GB",
-        "source": "ap"
-      }
+      "channel_permitted": true
     },
     {
       "ssid": "Neighbour 5G",
@@ -49,11 +41,7 @@
       "saved": false,
       "in_use": false,
       "supported": true,
-      "channel_permitted": true,
-      "region_suggestion": {
-        "country": "GB",
-        "source": "neighbours"
-      }
+      "channel_permitted": true
     },
     {
       "ssid": "eduroam",
@@ -65,11 +53,7 @@
       "saved": false,
       "in_use": false,
       "supported": true,
-      "channel_permitted": true,
-      "region_suggestion": {
-        "country": "GB",
-        "source": "ap"
-      }
+      "channel_permitted": true
     },
     {
       "ssid": "OldRouter",
@@ -81,11 +65,7 @@
       "saved": false,
       "in_use": false,
       "supported": false,
-      "channel_permitted": true,
-      "region_suggestion": {
-        "country": "DE",
-        "source": "default"
-      }
+      "channel_permitted": true
     }
   ]
 }

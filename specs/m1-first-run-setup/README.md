@@ -11,7 +11,7 @@ This folder specifies how a new Muon3D M1 gets from the box to its first print. 
 - **One flow, one entry point.** Setting up, pairing and linking are steps of one flow, which lives on the printer. Every app offers a single **Add printer** that works out which steps are left. Nobody is asked whether their printer is set up.
 - **It starts at the printer.** Switch it on and the round knob panel starts setup: **language → network → name → update → remote access → ready to print**. The panel can finish every step on its own, offline.
 - **The knob picks, the phone types.** From the second screen, the panel shows a QR code. Scanning it joins the phone to the printer's hotspot, and the setup page opens by itself as a captive portal. No app or internet is needed. The page is a `/setup` route in the Fluidd fork, served by the printer. The panel and the phone show the same state, and either one can take over at any time.
-- **The region is confirmed when joining.** Following KAN-321 Rev 11, the region comes from the chosen network and shows as a line ("Region: United Kingdom · Change") that the owner confirms by connecting.
+- **The region is confirmed after joining.** Following KAN-321 Rev 11, draft MuonOS#174 and draft MuonUI#31, the region comes from the network the printer joined. It shows as a line, "Region: United Kingdom · Change", which the owner confirms.
 - **Linking is last and optional.** At the remote-access step, **Keep it on my network** is focused. **Link a Muon account** reuses today's 6-digit code and knob confirmation. The printer contacts Muon only after the owner chooses it (Tier 1).
 - **Nothing dead-ends.** When an app can't find the printer, it asks "What does your printer's screen show?", because the screen always shows the next step.
 
@@ -25,10 +25,11 @@ This folder specifies how a new Muon3D M1 gets from the box to its first print. 
 | D4 | The setup page opens as a captive portal, using DNS and nginx on the hotspot. It's permanent, with no runtime toggling. | The alternative is a second QR scan for everyone. The hotspot never routes anywhere (AP-7), so hijacking DNS is harmless. |
 | D5 | The hotspot turns off 15 minutes after a successful setup when an uplink is connected (H3). AP-4 still brings it back whenever the uplink is lost. | It sends the phone back to its usual Wi-Fi, and it shrinks the attack surface. |
 | D6 | The "Ready to print" content is **provisional** and data-driven (a manifest). The hardware team owns the items. | The owner's decision was pending. The flow ships with a default manifest the team can edit without code changes. |
-| D7 | The region follows KAN-321 Rev 11: it's confirmed at join, not asked up front. This **changes the design page**, which had the country as step 2. | Rev 11 (12 Sep) and ADR 0005 supersede KAN-324's order. The Aux routes are already built, and it removes a screen for most owners. |
+| D7 | The region follows KAN-321 Rev 11 and MuonUI#31: it's confirmed **after** the join, not asked up front. This **changes the design page**, which had the country as step 2. | Rev 11 (12 Sep) and ADR 0005 supersede KAN-324's order. Aux can't suggest a country for a network before joining it. This removes a screen for most owners. |
 | D8 | A factory reset clears the declared country, and setup asks again. The market token survives. | ADR 0005 and KAN-351 supersede KAN-325's "keep the country". |
 | D9 | `muon_setup`, a Moonraker component, owns the state machine. MuonUI and the `/setup` page are thin renderers. | One source of truth. It survives phones dropping off and power loss, and it lets Bluetooth and the future app reuse the same API. |
 | D10 | Enterprise Wi-Fi (PEAP and TTLS) is supported from a phone or computer, not from the panel. | Three ring-keyboard fields plus a certificate is too much for a knob. Labs and universities need it. |
+| D11 | The hotspot reaches **only the printer**: no internet and no LAN (AP-7 made true). Its DNS answers every name with `10.42.0.1`. | That wildcard is what makes phones open the setup page by themselves. Today the hotspot NATs clients to the internet and leaves an Ethernet LAN reachable, which is a security gap (07 §3). |
 
 ## System map
 
@@ -43,7 +44,7 @@ This folder specifies how a new Muon3D M1 gets from the box to its first print. 
  panel (Chromium kiosk)  │  nginx :100 (lo) ─▶ MuonUI ─▶ /server ─▶ │                   │    │
  + knob (sk_daemon)      │                                          ▼                   │    │
                          │                              aux_api_proxy ─▶ Aux API :6789 (lo)   │
-                         │                                   /wifi/* /region/* /time* /setup/complete
+                         │                                   /wifi/* /region/* /time* /setup
                          │                                   ─▶ NetworkManager, regdomain, timedatectl
                          └───────────────────────────────────────────────────────────────────┘
  app.muon3d.com (https) ── can't reach the LAN ──▶ "What does the screen show?" → code → console /v1/links/*
@@ -94,17 +95,31 @@ This folder specifies how a new Muon3D M1 gets from the box to its first print. 
 | Level 0 Open | SEC-1: the LAN and the hotspot are trusted, with no sign-in. |
 | The floor | `muon_floor.FLOOR_PREFIXES`: endpoints refused to anything but loopback. |
 | Link | Binding the printer to a Muon account: a code on the panel, a claim on app.muon3d.com, then a knob confirm. |
-| Marker | `/var/lib/muon3d/setup/complete`, which records that setup finished (KAN-203). |
+| Marker | `/var/lib/muon3d/setup/setup.json` (MuonOS#174), which records that setup finished (KAN-203). |
 
 ## Verify before building
 
-Not every repo was reviewed for this spec. Moonraker, Fluidd and OrcaSlicer were read directly, and Jira was read in full. MuonOS, MuonUI, muon-link and the console were known only through Jira and the code that calls them. Anything below that doesn't match reality is a spec bug. Fix the spec in the same PR series.
+Each repo was checked against the code on 24 Sep (Moonraker `dc76b59`, Fluidd `9694dec`, OrcaSlicer, MuonOS `4d9f6e3`, MuonUI `f5ffa7c`, muon-link `bfcd43f`). What's still open:
 
-1. **The account link.** It's muon-link PR #24 (`/link/*`), not `/pairing/*`. Still open: the LINK-2 code-minting conflict, the code limits in muon-console, and proof of a knob press on `/link/confirm` (03 §6, ML-2).
-2. **Aux `/region/*` request and response shapes.** They are "built" but undocumented, so map them to the fields in 03 §3 (OS-2).
-3. **MuonUI structure.** The router, the store pattern, the MuonUI#31 setup route, and how the HOTSPOT card reads the key (04 §1, §5).
-4. **The internet-check endpoint on the OTA host.** It must be recorded in the privacy inventory (03 §4).
-5. **Whether `/var/lib/muon3d/setup` is Rugix-persisted** (03 §7, OS-7).
-6. **The Tier 3 self-hosted configuration API.** Until it exists, `capabilities.self_hosted` is false, and "My own server" is hidden.
-7. **The ready manifest content and the `MUON_SELF_TEST` macro.** The hardware team owns these (D6).
-8. **KAN-326's band pin reaching fielded units.** OS-5 depends on it.
+1. **Draft PRs this spec builds on.** Several pieces exist only in unmerged PRs:
+   - MuonOS#174 (region and setup routes, `setup.json`);
+   - MuonOS#210 (`/wifi/saved`);
+   - MuonOS#305 (listeners);
+   - MuonUI#31 (setup route, region picker);
+   - MuonUI#39 (Wi-Fi overhaul);
+   - Moonraker#20 (`muon_link`);
+   - muon-link#24 (account link).
+
+   Agents must coordinate with those PRs' authors, not fork them.
+2. **No unit can declare a region yet.** There are no signing keys or tokens (KAN-321, KAN-132), so setup runs as market `none` until they exist.
+3. **The account link has open questions:**
+   - the LINK-2 conflict over who mints the code;
+   - the code's limits in muon-console;
+   - no proof of a knob press on `/link/confirm` (ML-2).
+
+   See 03 §6.
+4. **Ready to print.** The manifest content and the `MUON_SELF_TEST` macro belong to the hardware team (D6).
+5. **Bluetooth (phase 2)** needs MuonOS SPEC AP-10 amended. AP-10 currently says "explicitly not built".
+6. **Security bugs found on the way** (07 §3):
+   - Wi-Fi passwords in the persisted journal (OS-11, urgent);
+   - hotspot clients reaching the internet and an Ethernet LAN (OS-1).

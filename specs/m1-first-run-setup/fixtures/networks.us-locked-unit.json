@@ -17,8 +17,7 @@
       "saved": false,
       "in_use": false,
       "supported": true,
-      "channel_permitted": true,
-      "region_suggestion": null
+      "channel_permitted": true
     },
     {
       "ssid": "BT-Hub-8JX2",
@@ -30,8 +29,7 @@
       "saved": false,
       "in_use": false,
       "supported": true,
-      "channel_permitted": true,
-      "region_suggestion": null
+      "channel_permitted": true
     },
     {
       "ssid": "Neighbour 5G",
@@ -43,8 +41,7 @@
       "saved": false,
       "in_use": false,
       "supported": true,
-      "channel_permitted": false,
-      "region_suggestion": null
+      "channel_permitted": false
     },
     {
       "ssid": "eduroam",
@@ -56,8 +53,7 @@
       "saved": false,
       "in_use": false,
       "supported": true,
-      "channel_permitted": true,
-      "region_suggestion": null
+      "channel_permitted": true
     },
     {
       "ssid": "OldRouter",
@@ -69,8 +65,7 @@
       "saved": false,
       "in_use": false,
       "supported": false,
-      "channel_permitted": true,
-      "region_suggestion": null
+      "channel_permitted": true
     }
   ]
 }

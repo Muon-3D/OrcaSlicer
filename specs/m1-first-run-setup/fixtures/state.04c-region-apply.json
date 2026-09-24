@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "rev": 5,
+  "rev": 10,
   "state": "in_progress",
   "cursor": "network",
   "driver": {
@@ -12,8 +12,8 @@
   },
   "op": {
     "kind": "region_apply",
-    "id": "op_5",
-    "started": 1790251290.0,
+    "id": "op_7",
+    "started": 1790251330.0,
     "phase": null,
     "progress": null
   },
@@ -38,10 +38,33 @@
   },
   "region": {
     "market": "picker",
-    "country": "DE",
-    "declared": false,
-    "config": "de",
-    "source": "default"
+    "reason": "declared",
+    "declared_country": null,
+    "configuration": "de",
+    "domain": "DE",
+    "surroundings": "offer",
+    "detected_country": "GB",
+    "basis": "joined-network",
+    "locked": false,
+    "channels": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      36,
+      40,
+      44,
+      48
+    ]
   },
   "capabilities": {
     "ethernet": true,
@@ -59,12 +82,15 @@
     },
     "network": {
       "status": "pending",
-      "kind": null,
-      "ssid": null,
-      "addresses": [],
-      "hostname_local": null,
-      "internet": null,
-      "error": null
+      "kind": "wifi",
+      "ssid": "HomeWiFi",
+      "addresses": [
+        "192.168.1.37"
+      ],
+      "hostname_local": "Muon-walnut-8987.local",
+      "internet": true,
+      "error": null,
+      "region_confirmed": false
     },
     "name": {
       "status": "pending",

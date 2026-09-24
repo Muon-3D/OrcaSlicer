@@ -1,267 +1,324 @@
 # 03 · Printer OS work (MuonOS, Aux API, muon-link)
 
-**Repos:** `Muon-3D/MuonOS` (the Aux API lives at `recipes/aux_api/files/aux_api/`: FastAPI on `127.0.0.1:6789`, token in `/run/aux_api/token`), and muon-link (pairing admin endpoint on `127.0.0.1:7131`).
+**Repos:**
 
-Neither repo was available when this spec was written. Routes marked **exists** come from Jira and the Moonraker proxy tests. Routes marked **new** are what this spec needs. Before adding a new route, check whether MuonOS already has an equivalent, and prefer extending it.
+- **`Muon-3D/MuonOS`** (checked at `main` `4d9f6e3`). The Aux API lives in `recipes/aux_api/files/aux_api/` and runs as FastAPI on `127.0.0.1:6789`, with its token in `/run/aux_api/token`. Its contract is `contracts/muon.aux-api/v2/openapi.json`.
+- **`Muon-3D/muon-link`.** Its admin endpoint is on `127.0.0.1:7131`.
 
-The Aux API is published to Moonraker automatically: `aux_api_proxy` rebuilds `/server/aux/*` from `/openapi.json` at startup. Any new route therefore appears there as well. Each new route must say whether it may be reached from the network. Anything that mustn't be goes into `muon_floor.FLOOR_PREFIXES` as `/server/aux/<path>`.
+Aux is published to Moonraker automatically: `aux_api_proxy` rebuilds `/server/aux/*` from `/openapi.json`. Any new route therefore appears there too.
+
+**The floor has two lists that must match.** The `:80` Fluidd server returns 403 for the floored Aux paths (`recipes/klipper_moonraker_fluidd/files/fluidd/fluidd.nginx.template:122-136`), and a test requires that list to equal Moonraker's `FLOOR_PREFIXES`. Every path added to the floor must be added in **both** repos.
+
+**Before you start:**
+
+- The region and setup routes exist only in **draft [Muon-3D/MuonOS#174](https://github.com/Muon-3D/MuonOS/pull/174)** ("DO NOT MERGE (WIP): KAN-321"). They are not on `main`.
+- No signing key is installed yet, so **every unit reports `no-signing-key`, and no unit can declare a country today.** Setup must work in that state ([01-flow.md §2.1](01-flow.md#21-region-inside-network)).
+- Other open PRs this work depends on:
+  - [#210](https://github.com/Muon-3D/MuonOS/pull/210): `GET /wifi/saved`, and replacing a saved password;
+  - [#300](https://github.com/Muon-3D/MuonOS/pull/300): `security_enabled`;
+  - [#305](https://github.com/Muon-3D/MuonOS/pull/305): `/etc/muon3d/listeners.d`;
+  - [#249](https://github.com/Muon-3D/MuonOS/pull/249): a network-authority check on the Wi-Fi routes.
 
 ## 1. Hotspot lifecycle
 
-**What exists today:**
+**Today:**
 
-- `ap0` is created by the udev rule `00-ap0.rules`.
-- The profile is `/etc/NetworkManager/system-connections/ap0-con.nmconnection`, Rugix-persisted.
-- The per-device 12-character WPA2 key comes from `muon-ap-provision` (KAN-103). The SSID `Muon-<word>-<hex4>` matches the hostname (KAN-357).
-- `muon-ap-lifecycle.sh` enforces **AP-4**: the AP is up whenever the station isn't connected. A timer re-checks it (KAN-235).
-- The default is on (`AP_DEFAULT_UP`, KAN-341). The owner's choice is stored in `ap-hotspot-requested` and `ap-hotspot-disabled` under `/home`.
-- The panel refuses to switch the AP off while it's the only way in (KAN-347).
-- Firewall `10-ap-isolate` allows only DHCP, DNS, `:80` and ICMP from `ap0`, and drops forwarding. Hotspot clients can't reach the LAN or the internet (AP-7).
+- `ap0` comes from `00-ap0.rules`. Its profile is `ap0-con.nmconnection` (`autoconnect=false`, `band=bg`, channel 6, WPA-PSK, `ipv4 method=shared`). The profile directory is persisted, so booted units keep their own older copy; #174 migrates them.
+- `muon-ap-provision` writes the 12-character key.
+- `muon-ap-lifecycle.sh` (since KAN-341): the hotspot is **up unless `/home/printer_admin/ap-hotspot-disabled` exists**, and it's **forced up while `wlan0` isn't connected**. `ap-hotspot-requested` is a legacy file and is ignored. There is no `AP_DEFAULT_UP`.
+- What triggers it: the dispatcher `20-ap-lifecycle`, and `muon-sta-watchdog.timer`, which does nothing while `wlan0` is connected.
+- `POST /wifi/ap/count` returns the number of stations as a bare int, via pyroute2 `get_stations`.
+- Measured: the hotspot follows the uplink, **including onto 5 GHz DFS channel 124**.
 
-**New policy.** Update `muon-ap-lifecycle.sh` and the dispatcher:
+**The new policy.** Change `muon-ap-lifecycle.sh`:
 
 | Rule | When | AP |
 |---|---|---|
-| H1 | The setup marker (§7) is absent | **Up**, whatever the owner-choice files say. On a fresh or reset unit those files don't exist anyway. |
-| H2 | The marker is present and the station isn't connected | **Up** (AP-4, unchanged) |
-| H3 | The marker is present, the station is connected, and `ap-hotspot-requested` is absent | **Down**, once the auto-off deadline has passed |
-| H4 | The owner turns it on (Settings › Add a phone or computer, or the Fluidd hotspot card) | **Up**. This writes `ap-hotspot-requested`. The owner turns it off the same way. |
+| H1 | Setup isn't complete: `setup.json` (§7) is missing or has `complete != true` | **Up**, whatever the owner-choice file says |
+| H2 | Setup is complete and `wlan0` isn't connected | **Up** (unchanged) |
+| H3 | Setup is complete, an uplink (`wlan0` or `eth0`) is connected, the auto-off deadline has passed, and `/home/printer_admin/ap-hotspot-kept-on` is absent | **Down** |
+| H4 | The owner turns it on (Settings › Add a phone or computer, or the hotspot card) | **Up**. This writes `ap-hotspot-kept-on`, a **new** file name, because pre-KAN-341 units may still have `ap-hotspot-requested`. Turning it off removes the file and writes `ap-hotspot-disabled`, as today. |
 
-- **H3 makes the default after setup "off when connected".** That is the direction MuonOS#193 proposes. Before setup, the default stays on.
-- **New route `POST /wifi/ap/auto_off`**, body `{ "after_s": 900 }`:
-  - It writes a deadline to `/run/muon3d/ap-auto-off` (tmpfs) and wakes the lifecycle check.
-  - At the deadline the check applies H3. If the station isn't connected by then, H2 keeps the AP up.
-  - Loopback-only: add `/server/aux/wifi/ap/auto_off` to the floor.
-- **New route `GET /wifi/ap/stations`** returns `{ "up": true, "count": 1 }`.
-  - The count comes from `iw dev ap0 station dump`.
-  - Don't return MAC addresses.
-  - This replaces `muon_setup`'s use of the ambiguous `POST /wifi/ap/count`.
-- **Band pin (KAN-326).** The hotspot must be pinned to 2.4 GHz channels 1–11 (`band=bg`) *before* the station associates. That keeps it visible under the world domain `00`. Delivering the pin to fielded units (KAN-326) is a prerequisite.
-- **Channel following.** `ap0` and `wlan0` share one radio, so after association the AP moves to the uplink's channel. If the uplink is on a 5 GHz DFS channel, the AP may not be able to beacon. Measure this (§9). If the AP can't come back, `GET /wifi/ap/stations` reports `up: false`, and the panel shows the result and the printer's LAN address. The phone page has already warned about this.
+- **H3 changes KAN-341's default once setup is done.** It becomes "off while connected", which is the direction of MuonOS#193. Before setup, and after a factory reset, the default is on.
+- **New route `POST /wifi/ap/auto_off`** with `{ "after_s": 900 }`.
+  - Aux is unprivileged, so give it a sudo grant for a new helper, `/usr/libexec/muon3d/muon-ap-auto-off <seconds>`.
+  - The helper starts a transient timer, `systemd-run --on-active=<s> --unit=muon-ap-auto-off …`, which re-runs the lifecycle when it fires.
+  - It must be loopback-only. Add `/server/aux/wifi/ap/auto_off` to `FLOOR_PREFIXES` and to the `:80` nginx 403 list.
+- **Station count.** `muon_setup` reads it from `POST /wifi/ap/count`. Keep that route; MuonUI's contract uses it.
+- **Channel following.** Once the uplink associates, the hotspot moves to the uplink's channel, which can be 5 GHz or DFS. Phones that support 5 GHz follow it. Record in QA-1 how long the drop lasts.
 
 ## 2. Captive portal
 
-The design goal is that a phone joining the hotspot opens `/setup` by itself, and nothing needs to be switched on and off at runtime.
+**Goal:** a phone that joins the hotspot opens `/setup` by itself, with nothing to switch on or off at runtime.
 
-**DNS.** NetworkManager's shared-mode dnsmasq already serves `ap0` on `10.42.0.1`, and it is declared in GATE-1 (`/etc/muon3d/listeners.d`). Add the drop-in `/etc/NetworkManager/dnsmasq-shared.d/muon-captive.conf`:
+**Today:**
 
-```conf
-# Every name resolves to the printer. The hotspot never routes to the internet (AP-7),
-# so this is safe to leave on permanently.
-address=/#/10.42.0.1
-# No AAAA answers, so dual-stack phones fall back to IPv4.
-address=/#/::
-```
+- The hotspot **does** route: NetworkManager's shared mode NATs hotspot clients to the internet.
+- `10-ap-isolate` rejects only traffic from `ap0` to the **`wlan0` subnet**, so a LAN reached over Ethernet isn't isolated.
+- `muon3d-firewall.nft` is default-deny on input. It accepts tcp/80, tcp/22, udp/7127, udp/5353 and ICMP on every interface, plus udp/53, tcp/53 and udp/67 on `ap0`.
+- Nothing is installed under `dnsmasq-shared.d`.
 
-Check the AAAA behaviour on the image with `dig AAAA captive.apple.com @10.42.0.1`. The expected answer is NODATA or `::`, and never a routable address.
+**Decision (README D11): the hotspot talks to the printer only.** It's a way to reach the printer, not a way to the internet or the LAN. That makes AP-7 true, and it lets the DNS wildcard below stay on permanently.
 
-**HTTP.** Add this to the nginx server on `:80`, the one that serves Fluidd:
+**OS-1 changes:**
 
-```nginx
-# Requests that reached the printer through the hotspot, for a host name that isn't the printer's own,
-# are OS captive-portal probes or stray traffic. Send them to the setup page.
-map $host $muon_own_host {
-    default                                 0;
-    10.42.0.1                               1;
-    muon3d.local                            1;
-    ~*^muon-[a-z]{4,7}-[0-9a-f]{4}(\.local)?$  1;
-}
+1. **Isolation.** In `dispatcher.d/10-ap-isolate`, reject all forwarding from `ap0`: to the internet, to the `wlan0` subnet and to any `eth0` subnet. Run it on `eth0` events too.
+   - Keep this out of `muon3d-firewall.nft`: `tests/test_firewall_ruleset.py` forbids forward hooks there, and its comment about "the hotspot's internet access" needs updating.
+   - Hotspot clients lose internet access, which today is incidental.
+2. **HTTPS fails fast.** Add `iifname "ap0" tcp dport 443 reject with tcp reset` to `muon3d-firewall.nft`, so HTTPS captive probes fail at once instead of timing out. A reject isn't a listener; check it against #305's rule that declared ports must equal allowed ports.
+3. **Pin `10.42.0.1`** in `ap0-con` (`ipv4.addresses=10.42.0.1/24`). It's NetworkManager's shared-mode default today, not pinned. Pinning it needs the same migration of persisted profiles that #174 uses.
+4. **DNS.** Add `/etc/NetworkManager/dnsmasq-shared.d/muon-captive.conf`:
 
-server {
-    # ... existing Fluidd server on :80 ...
-    set $muon_portal "";
-    if ($server_addr = 10.42.0.1) { set $muon_portal "hotspot"; }
-    if ($muon_own_host = 0)       { set $muon_portal "${muon_portal}-foreign"; }
-    if ($muon_portal = "hotspot-foreign") {
-        add_header Cache-Control "no-store" always;
-        return 302 http://10.42.0.1/setup;
-    }
+   ```conf
+   # Every name resolves to the printer; the hotspot routes nowhere else (D11).
+   address=/#/10.42.0.1
+   # No routable AAAA answers, so dual-stack phones fall back to IPv4.
+   address=/#/::
+   ```
 
-    location = /setup { return 302 /#/setup; }
-}
-```
+5. **HTTP.** Add this to `fluidd.nginx.template`. It must pass `scripts/check-nginx-templates.sh` (`nginx -t`) in CI. Fluidd uses hash routing, so `/#/setup` is correct.
 
-- **Why this triggers the portal.** Every OS's probe then fails in a way that shows a portal:
-  - Apple (`captive.apple.com/hotspot-detect.html`)
-  - Android and ChromeOS (`connectivitycheck.gstatic.com/generate_204` and similar)
-  - Windows (`www.msftconnecttest.com/connecttest.txt`)
-  - Firefox (`detectportal.firefox.com/success.txt`)
-  - NetworkManager (`nmcheck.gnome.org`)
-- **Port 443 stays closed** on `ap0` (`10-ap-isolate`). HTTPS probes therefore fail fast and the plain-HTTP result decides.
-- **No new listeners** for GATE-1. **No runtime toggling:**
-  - Before setup, the redirect lands on the setup flow.
-  - After setup, it lands on the same page in "set up already" or recovery mode ([05-phone-setup-page.md](05-phone-setup-page.md) S10).
-- **RFC 8910 / DHCP option 114 is rejected.** The captive-portal API it points to must be served over HTTPS with a publicly valid certificate, which an offline printer can't have.
+   ```nginx
+   # http context
+   map $host $muon_own_host {
+       default                                        0;
+       10.42.0.1                                      1;
+       muon3d.local                                   1;
+       "~*^muon-[a-z]{4,7}-[0-9a-f]{4}(\.local)?$"    1;
+   }
+   map "$server_addr:$muon_own_host" $muon_portal {
+       default          0;
+       "10.42.0.1:0"    1;
+   }
+
+   # inside the existing :80 server
+   if ($muon_portal) { return 302 http://10.42.0.1/setup; }
+   location = /setup { return 302 /#/setup; }
+   ```
+
+   **Why this opens the portal.** A request for a foreign host that arrives over the hotspot is an OS captive-portal probe, so it gets redirected: Apple `captive.apple.com`, Android `connectivitycheck.gstatic.com`, Windows `msftconnecttest.com`, Firefox `detectportal.firefox.com` and NetworkManager `nmcheck.gnome.org`. Every OS then opens the portal.
+
+**No runtime toggling:**
+
+- Before setup completes, the page opens the setup flow.
+- After it completes, the same redirect opens the page in "set up already" or recovery mode ([05-phone-setup-page.md](05-phone-setup-page.md) S10).
+
+**GATE-1.** The dnsmasq listeners on `10.42.0.1` are declared by #305. OS-1 adds no new listener.
+
+**Rejected:** RFC 8910 / DHCP option 114. It needs an HTTPS API with a publicly valid certificate, which an offline printer can't have.
 
 ## 3. Region, time zone and clock
 
-**Region: exists (KAN-321 Rev 11, "Built").** The routes are `GET /region`, `GET /region/options` and `POST /region/country`.
+### Region: the draft #174 contract
 
-- `muon_setup` needs these fields from them. Add any that are missing:
+| Route | Response |
+|---|---|
+| `GET /region` | `{reason, explanation, domain, declared_country, configuration, surroundings, detected_country, basis, enforcement, locked, channels}` |
+| `GET /region/options` | `{countries, preselect, basis, locked}` |
+| `POST /region/country` `{country}` | `{country, configuration, domain, verified}` |
 
-| Need | Field | Where |
-|---|---|---|
-| Market | `picker` / `locked` / `none`, derived from the token's `configs` (`["us"]` → locked; no valid token → none) | `GET /region/options` |
-| Offered countries | Grouped by continent, from the token plus `regions.json` | `GET /region/options` |
-| Tier 2 order | Countries for a language, by speakers (German → DE, AT, CH) | `GET /region/options?language=de` (**new param**) |
-| Token default | `default_country` | `GET /region/options` |
-| Applied state | `country`, `config`, `declared`, `source`, `applied_at` | `GET /region` |
-| Permitted channels | Channels the applied configuration permits | `GET /region` (Rev 11 says it already returns these) |
-| Per-configuration channels | To check a network's channel *before* applying | `GET /region/options` (**new**: `channels` per config) |
-| Support code | Shown when the token is missing or invalid | `GET /region` (**new** if absent) |
+**`GET /region` fields:**
 
-- **New route `GET /region/suggest?ssid=<ssid>`** returns `{ "country": "GB" | null, "source": "ap" | "neighbours" | "default" | null }`.
-  - It uses the latest scan's country elements, following Rev 11's order: the AP's own element first, then the neighbours' plurality, then the token default. It's filtered through the token.
-  - If the scan model can carry each BSS's country element, extend `GET /wifi/scan` instead, and let `muon_setup` apply the same rule.
-- **Apply (`POST /region/country`).**
-  - It is live: it takes every Wi-Fi link down, **`ap0` included**, applies the country, verifies it against the channel-map fingerprint, brings back what it took down, and only then records the declaration. It takes about 8 s.
-  - `muon_setup` needs **stable error codes** in `detail.code`: `busy`, `not_offered`, `apply_failed`, `no_token`.
-  - Loopback-only? No. Level 0 lets the LAN and the hotspot change the region, the same as today's Wi-Fi card. Revisit under SEC-8.
+- `surroundings` is one of `settled`, `offer`, `not-registered`, `locked` or `unknown`.
+- `basis` is `joined-network` or `plurality`.
+- `channels` lists the channels on which the applied configuration may start a transmission. It's empty when no configuration is applied.
 
-**Time: new.** Privileged, behind the `aux_api` sudo boundary.
+**`GET /region/options` fields:**
+
+- `countries` is a flat, sorted list of ISO codes.
+- `preselect` is the detected country if the token allows it, otherwise the token's `default_country`.
+
+**How `muon_setup` reads them:**
+
+- **Market.** `countries == []` means `none` (no valid token). `locked == true` means `locked` (a US unit). Anything else is `picker`.
+- **Suggestion.** `detected_country` with `basis`. `joined-network` works only **after** the printer has joined, because it reads the associated BSSID. `plurality` needs at least 3 access points naming a country, with that country ahead by at least 2.
+- **No per-network suggestion before joining.** Nothing exposes each network's country element, so the flow confirms the region after the join (01 §2.1), as MuonUI#31 does. No `/region/suggest` route is needed.
+- **Apply.** It takes down **every** active wireless profile, `ap0-con` included. It then applies the country, verifies the channel map, brings the profiles back, and only then records the declaration. It takes about 8 s.
+
+**Where things live:**
+
+| What | Path |
+|---|---|
+| Token | `/run/rugix/mounts/config/muon3d/region-token.json` (config partition; survives a reset) |
+| Declared country | `/var/lib/muon3d/region/declared-country` |
+| Status | `/run/muon3d/region-status.json` |
+| Table | `/usr/share/muon3d/region/regions.json` |
+
+**OS-2, changes needed on #174 before `muon_setup` can rely on it:**
+
+1. **Stable error codes.** Return `detail: {code, message}`, as `/update/*` already does, using the region agent's `OUTCOMES` vocabulary:
+   - `no-token`, `unreadable-token`, `bad-token-format`, `bad-signature`, `unknown-serial`, `serial-mismatch`, `no-signing-key`;
+   - `country-not-in-token`;
+   - `apply-failed`, `intersected`, `readback-mismatch`;
+   - `busy`.
+
+   Today a 409 carries the agent's last stderr line as free text.
+2. **Timeouts and concurrency.** Cut `SET_COUNTRY_TIMEOUT_S` from 90 s to under 60 s, the Moonraker proxy's limit. Add a concurrency guard that returns `busy`.
+3. **Channels per configuration.** Add each configuration's channels to `GET /region/options`, taken from `regions.json`'s `initiable_2g4` and `initiable_5g`. The surfaces can then say whether a network is reachable after a switch.
+4. **Signing keys and tokens** (KAN-321 / KAN-132). Until they exist, every unit is `no-signing-key` and setup treats it as market `none`.
+
+**Tier-2 picker data.** "Countries where this language is spoken" and the country names stay on the UI side: `SPOKEN_IN` and `Intl.DisplayNames` in MuonUI#31's `regionCountries.ts`, ported to Fluidd. `regions.json` has no language or continent data.
+
+### Time (OS-6, new)
+
+**Today:**
+
+- There is no timezone handling.
+- `systemd-timesyncd` runs with Debian defaults.
+- `/etc/fake-hwclock.data` **isn't persisted**, so every boot starts from the image's baked time.
+- There are no sudo grants for `timedatectl`, `date` or `fake-hwclock`.
+- The clock-before-TLS precondition is **KAN-198**.
+
+**Routes to add:**
 
 | Route | Does |
 |---|---|
 | `GET /time` | `{ "epoch_ms", "ntp_synced", "tz" }` |
-| `POST /time` `{ "epoch_ms" }` | Refuses with `409 ntp_synced` when `timedatectl show -p NTPSynchronized --value` is `yes`. Otherwise it runs `timedatectl set-time @<s>` (or `date -s`), then `fake-hwclock save`. |
-| `POST /time/zone` `{ "tz" }` | Validates `tz` against `/usr/share/zoneinfo`, then runs `timedatectl set-timezone`. |
+| `POST /time` `{ "epoch_ms" }` | Refuses with `409 ntp_synced` if `timedatectl show -p NTPSynchronized --value` is `yes`. Otherwise it runs `sudo -n timedatectl set-time @<s>`. |
+| `POST /time/zone` `{ "tz" }` | Validates against `/usr/share/zoneinfo` and runs `sudo -n timedatectl set-timezone`. |
 
-- **Persisting the time zone.** The root overlay is volatile, so the zone won't survive a reboot on its own.
-  - Either add `/etc/localtime` and `/etc/timezone` to Rugix `[[persist]]`, or keep the zone in `/var/lib/muon3d/setup/timezone` and have a boot oneshot apply it.
-  - Pick whichever MuonOS already does for similar files (see KAN-95), and add it to the ID-9 state inventory.
-- **Reachable from the hotspot and LAN.** The setup page posts the time from the phone. `POST /time` is harmless once NTP has synced, because it refuses then.
+**Persisting the time zone.**
+
+- Write it to `/var/lib/muon3d/setup/timezone`, and add a boot oneshot that applies it before `muon_setup` starts.
+- Don't bind-mount `/etc/localtime`: `timedatectl` replaces that symlink with an atomic rename, which a bind mount breaks.
+- Add sudoers entries for the exact commands, and a row in `docs/privacy/data-inventory.md`.
 
 ## 4. Wi-Fi join
 
-**Exists:**
+**Today (`wifi_routes.py`):**
 
-- `GET /wifi/scan?rescan=1` returns `DeviceWifi {in_use, ssid, bssid, mode, chan, freq, rate, signal, security}`.
-- `POST /wifi/connect` takes `{ssid, password}`. It waits up to 45 s, with a 10 s restore on failure (KAN-339).
-- `GET /wifi/device/status` returns `{device, device_type, state, connection, state_reason?}`.
-- Also `/wifi/current`, `/wifi/show`, `/wifi/forget` and `/wifi/up`.
+- `GET /wifi/scan?rescan=` returns `DeviceWifi {in_use, ssid, bssid, mode, chan, freq, rate, signal, security}`.
+- `GET /wifi/device/status` returns `{device, device_type, state, connection, state_reason?, user_disconnected}`. `state_reason` is nmcli's raw `"N (text)"`.
+- `GET /wifi/show?ssid=` is a query parameter, not a path segment.
+- `POST /wifi/connect` takes `{ssid, password?}`. It blocks for up to 45 s, plus 10 s for rollback. Its results:
 
-**How `muon_setup` drives a join:**
+  | Response | Meaning |
+  |---|---|
+  | `200 {"status":"connecting","ssid"}` | Success. It's sent after the activation wait. |
+  | `200 {"status":"restored","ssid":<previous>,"warning"}` | **The join failed and the previous connection was restored.** |
+  | `400` | Free text `Could not connect to 'X': …`. Nothing was restored. |
+  | `409` | More than 4 concurrent Wi-Fi operations |
+  | `500` | The restore failed |
 
-1. Start `POST /wifi/connect` as a background task, with a 60 s timeout to match the proxy.
-2. At the same time, poll `GET /wifi/device/status` every 500 ms and map NetworkManager device states to `op.phase`:
+**How `muon_setup` drives a join (MR-3):**
 
-   | NM state | `op.phase` |
+1. Run `POST /wifi/connect` as a task, with a 60 s timeout. `aux_api_proxy`'s internal `post()` is fixed at 15 s, so add a timeout parameter to it.
+2. At the same time, poll `GET /wifi/device/status` every 500 ms and map NetworkManager's state onto `op.phase`:
+   - preparing or configuring → `associating`;
+   - need-auth → `authenticating`;
+   - ip-config or ip-check → `dhcp`;
+   - activated → `internet_check`.
+3. Treat **`status: "restored"`** and **400** as failures, and read the reason from `state_reason`'s numeric prefix. Check these values on a device against NetworkManager's `NMDeviceStateReason`:
+
+   | `state_reason` | `code` |
    |---|---|
-   | `prepare`, `config` | `associating` |
-   | `need-auth` | `authenticating` |
-   | `ip-config`, `ip-check` | `dhcp` |
-   | `activated` | address obtained → `internet_check` |
+   | 7 (no secrets), or 8–11 (supplicant) on PSK | `wrong_password` |
+   | 8–11 on 802.1X | `eap_failed` |
+   | 53 (SSID not found) | `ssid_not_found` |
+   | 5, 15–17 (IP config / DHCP) | `no_address` |
+   | Anything else, or 45 s passing | `timeout` |
 
-3. On failure, map `detail.code` (W2 below) or the NM `state_reason`:
-
-   | NM `state_reason` | `code` |
-   |---|---|
-   | `no-secrets`, `supplicant-disconnect`, `supplicant-failed`, `supplicant-timeout` on PSK | `wrong_password` |
-   | The same on 802.1X | `eap_failed` |
-   | `ssid-not-found` | `ssid_not_found` |
-   | `ip-config-unavailable`, `dhcp-failed`, `dhcp-error` | `no_address` |
-   | Anything else after 45 s | `timeout` |
-
-**Aux changes:**
+**Changes needed:**
 
 | ID | Change |
 |---|---|
-| W1 | `POST /wifi/connect` accepts `hidden: bool` and `security`. It *replaces* the secret of an existing profile with the same SSID, fixing MuonOS#210 (no way to re-enter a password). |
-| W2 | Failures return `detail: {"code": "<one of the §4 codes>", "message": "…"}`. On failure the new profile is deleted and the previous connection restored (as today). Secrets are never logged: audit `nmcli` argument logging and `nmcli_gate.py`. |
-| W3 | **Enterprise.** `POST /wifi/connect` accepts `eap: {method: "peap"\|"ttls", phase2: "mschapv2"\|"pap", identity, anonymous_identity?, password, ca_cert_id?, domain_suffix_match?, no_ca_check?}`. It writes `802-1x.*` into a root-only keyfile, with the password stored in the keyfile (`password-flags=0`) so it works headless. |
-| W4 | `POST /wifi/ca_cert` takes a multipart file (≤ 16 KiB, PEM or DER). It is validated with `openssl x509`, stored as `/etc/NetworkManager/certs/<id>.pem` (0600 root, a persisted path), and returns `{ "id" }`. |
-| W5 | `GET /wifi/uplink` returns `{ "kind": "wifi"\|"ethernet"\|"none", "ssid", "addresses": [...], "gateway", "internet": true\|false\|"portal", "checked_at" }`. The internet check runs on every transition to connected and on demand (`?recheck=1`). |
-| W6 | `GET /wifi/saved` returns the saved SSIDs in one call (proposed in KAN-339). It replaces the N+1 `GET /wifi/show/<ssid>`. |
+| W1 | Replacing a saved network's password is **#210**. Hidden networks and a security hint are new work. They need `nmcli connection add`, which Aux has no sudo grant for today. |
+| W2 | Return `detail: {code, message}` with the codes above instead of free text. |
+| W3 | **Enterprise** (PEAP/TTLS). This needs a new privilege path: `nmcli connection add` or D-Bus/polkit. The sudoers header already says widening means D-Bus/polkit. It's the largest OS item, and it can ship later without blocking anything else (D10). |
+| W4 | `POST /wifi/ca_cert` stores certificates in `/etc/NetworkManager/certs`. That directory **isn't persisted**, so it needs a `[[persist]]` declaration, an ID-9 row and a data-inventory row. |
+| W5 | **The internet check.** The update check already talks to the Nexigon hub (`eu.nexigon.cloud`, via `nexigon-agent`, before any opt-in). Muon doesn't run that host, so it can't add a `generate_204` endpoint. Use the existing `check_connectivity()` (`update/ota_nexigon_client.py:392-414`) to decide `internet: true/false`. Report `internet: "portal"` when that check fails with a TLS or redirect error on an otherwise working uplink. `GET /wifi/uplink` returns `{kind, ssid, addresses, gateway, internet, checked_at}`, and adds no new destination. |
+| W6 | `GET /wifi/saved` is **#210**. |
 
-**Internet check (W5).**
+**Security bug, OS-11, independent of setup and urgent.**
 
-- **No new destinations.**
-  - Use the host that the OTA update check already contacts.
-  - Add a `generate_204` path to it, or use an equivalent path that returns 204.
-  - Record it in the privacy inventory (MuonOS#174).
-- **Results:**
-  - `204` → `internet: true`.
-  - Any redirect, or a `200` with a body → `"portal"` (a guest network that needs a web sign-in).
-  - DNS failure or a timeout (5 s) → `false`.
-- **Never contact a Muon account or link service before the owner opts in** (the Tier 1 promise, KAN-187).
+- `POST /wifi/connect` runs `sudo nmcli … device wifi connect <ssid> password <psk>`.
+- sudo logs `COMMAND=…` with the PSK to the **persisted** journal (`/var/log/journal`).
+- The PSK is also visible in `/proc/<pid>/cmdline` while the command runs.
+- `redaction.py` only cleans diagnostic bundles.
+
+**Fix:**
+
+- Stop passing the secret on the command line. Use nmcli's `passwd-file` with a 0600 file on tmpfs, or D-Bus.
+- Add a sudoers `Defaults!<cmnd> !syslog` for the connect command.
+- On update, vacuum the journal entries on units that already have them.
 
 ## 5. Ethernet
 
-`GET /wifi/uplink` (W5) covers `eth0`. If Ethernet has an address when `network` becomes current, `muon_setup` offers "Connected by cable". No Aux change is needed beyond W5.
+`GET /wifi/uplink` (W5) covers `eth0`. If Ethernet has an address when `network` becomes current, `muon_setup` offers "Connected by cable".
 
 ## 6. Account link (muon-link)
 
-The account link is **muon-link PR #24** ([Muon-3D/muon-link#24](https://github.com/Muon-3D/muon-link/pull/24), open, `c1f5b2c`; NET-10(d), ADR 0018). It isn't KAN-190's `/pairing/*`, which is **client pairing**: pinning a LAN client's key, with an 8-digit code, SAS comparison and burn limits. Setup phase 1 doesn't use client pairing.
+The account link is **muon-link PR #24** ([Muon-3D/muon-link#24](https://github.com/Muon-3D/muon-link/pull/24), open; NET-10(d), ADR 0018). It is not the `/pairing/*` routes, which are **client pairing** (8-digit code, SAS comparison, burn limits) and aren't used in setup phase 1.
 
-**Admin routes on `127.0.0.1:7131`** (PR #24):
-
-| Route | Caller | Does |
+| Admin route on `127.0.0.1:7131` | Caller | Does |
 |---|---|---|
-| `GET /link` | Moonraker `muon_link`; panel | The current `LinkPhase` ([02-setup-api.md §5.9](02-setup-api.md#59-remote-access)) |
-| `POST /link/start` | Moonraker `muon_link` | Dials the orchestrator and sends `LinkStart`, which moves the phase to `connecting`. The orchestrator replies with `LinkCode`, which moves it to `code`. |
-| `POST /link/confirm` | **Panel only** (MuonUI, directly) | Accepts the pending offer. It writes `link.json` and moves the phase to `linked`. |
+| `GET /link` | Moonraker `muon_link`; panel | Returns the current `LinkPhase` ([02-setup-api.md §5.9](02-setup-api.md#59-remote-access)) |
+| `POST /link/start` | Moonraker `muon_link` | Sends `LinkStart` and moves to `connecting`. The orchestrator's `LinkCode` then moves it to `code`. |
+| `POST /link/confirm` | **Panel only**, directly | Accepts the pending offer, which moves to `linked` |
 | `POST /link/cancel` | Moonraker `muon_link`; panel | Declines a pending offer and drops the connection |
 | `POST /link/unlink` | **Panel only** | Removes the link and every grant (LINK-8) |
 
-Errors are `409 {"error": "<sentence>"}`. muon-link pushes no events, so callers poll.
+Errors come back as `409 {"error": "<sentence>"}`. Nothing is pushed, so callers poll.
 
-**OS-10 (new).** The MuonOS side, which PR #24 lists under "Not in this PR":
+**OS-10 (new):**
 
-1. Add an nginx `location /muon-link/ { proxy_pass http://127.0.0.1:7131/; }` to the **`:100` MuonUI vhost only** (loopback). It must never go on `:80`.
-2. Set `MUON_LINK_ORCH_ID` and `MUON_LINK_RELAY_URL` in the muon-link unit, and `MUON_LINK_ORCH_ADDR` if it's needed. Without them `GET /link` answers `unavailable`.
-3. **Never set `MUON_LINK_DISCOVERABLE=1`.** It keeps an unlinked printer connected to the orchestrator, which breaks the Tier 1 promise (NET-2).
+1. Add `location /muon-link/ { proxy_pass http://127.0.0.1:7131/; }` to the **`:100` vhost only** (`recipes/muon-ui/files/muon-ui.nginx.template`). Never add it on `:80`.
+2. Set `MUON_LINK_ORCH_ID` and `MUON_LINK_RELAY_URL` in `recipes/muon-link/files/muon-link.service`, and `MUON_LINK_ORCH_ADDR` if needed.
+3. **Never set `MUON_LINK_DISCOVERABLE=1`** (NET-2, Tier 1).
 
-**Open questions for the connectivity owner.** These aren't decided by this spec.
+**Open questions for the connectivity owner:**
 
-- **LINK-2 conflicts with PR #24.** MuonOS `docs/connectivity/SPEC.md` LINK-2 says the **printer** mints an 8-character Crockford code and enforces its lifetime and a 3-attempt cap. PR #24 has the **orchestrator** mint a digits-only code, and muon-link enforces nothing. The code's length, TTL and attempt limits then live in muon-console (muon-link-cloud), which this spec hasn't reviewed.
-- **LINK-4 can't be built with PR #24.** LINK-4 wants the code made before the hotspot handoff and carried in the URL. With orchestrator-made codes, no code exists without internet. This spec only offers linking once the printer has internet.
-- **`/link/confirm` has no proof of a knob press.** Any loopback process can confirm a pending offer. See [07-security.md](07-security.md) S3 and ML-2.
-
-The console side is `/v1/links/claim` and `/v1/links/:id`, which Fluidd calls. It relays to the printer over `muon/orch/1` (`LinkStart`, `LinkCode`, `LinkOffer`, `LinkDecision`). It is unchanged except for CON-1.
+- **LINK-2 vs PR #24.** LINK-2 has the printer mint an 8-character Crockford code with a lifetime and a 3-attempt cap. PR #24 has the orchestrator mint a digits-only code, and muon-link enforces nothing.
+- **LINK-4 can't work with orchestrator-made codes.** There's no code without internet.
+- **`/link/confirm` has no proof of a knob press** (ML-2).
 
 ## 7. Completion marker and factory reset
 
-- **Marker:** `/var/lib/muon3d/setup/complete`, a JSON file: `{ "version": 1, "completed_at": "<ISO 8601>", "by": "muon_setup" }`.
-  - MuonOS#174 recorded `/var/lib/muon3d/setup` as a persisted path. Confirm it is in Rugix `[[persist]]` and in the ID-9 state inventory.
-  - **New routes:**
-    - `GET /setup/complete` returns `{ "complete": bool, "completed_at" }`.
-    - `POST /setup/complete` writes the marker. It is loopback-only, so add `/server/aux/setup/complete` to the floor.
-    - `DELETE /setup/complete` is also loopback-only and floored. It's for `reset`.
-- **Readers:** the hotspot lifecycle (H1/H3) and `muon_setup`'s migration check ([01-flow.md §7](01-flow.md#7-printers-already-in-the-field)).
-- **Factory reset** (`/usr/sbin/muon3d-factory-reset` → `rugix-ctrl state reset`, KAN-172):
-  - It clears the marker, the Moonraker database (the setup state and the name), saved networks and the certs, the declared country (ADR 0005), the Iroh identity, and the owner-choice files.
-  - The market token on `p1` survives.
-  - No change is needed.
-  - KAN-351's human-only reset check should also confirm that the printer boots into setup at `language` afterwards.
+**Adopt #174's design.** The marker is `/var/lib/muon3d/setup/setup.json`, holding `{complete, language, completed_at}`. `setup.toml` persists it.
+
+| Route | Notes |
+|---|---|
+| `GET /setup` | – |
+| `POST /setup` | Refuses `complete:false`. #174 deliberately has no un-complete. |
+
+- **`muon_setup` writes `POST /setup` at `finish`.** It reads `GET /setup` only for the migration check ([01-flow.md §7](01-flow.md#7-printers-already-in-the-field)).
+  - Once `muon_setup` has state of its own, that state is authoritative.
+  - A development `reset` therefore works without clearing the marker.
+- **`POST /server/aux/setup` goes on the floor**, in both lists. A LAN client can't mark setup complete.
+- **Inventory.** Add rows to the ID-9 inventory (`docs/connectivity/SPEC.md:211-236` and `recipes/factory-reset/tests/connectivity-state.toml`) and to `docs/privacy/data-inventory.md` for:
+  - `setup/`
+  - `region/declared-country`
+  - the time-zone file
+  - `ap-hotspot-kept-on`
+
+  `test_persisted_state.py` enforces that these match.
+
+**Factory reset** is `/usr/sbin/muon3d-factory-reset`, run as root from the console or SSH. It runs `rugix-ctrl state reset`, which clears everything persisted.
+
+| What | After a reset |
+|---|---|
+| Market token (config partition) | Survives |
+| Hostname and SSID | Re-derived from the serial, so the printer keeps the same name |
+| Hotspot key | Regenerated, so the Wi-Fi QR code changes |
+| Declared country and setup marker | Cleared, once #174's persist files have merged |
 
 ## 8. Phase 2: Bluetooth
 
-This isn't built in phase 1. It is written down so phase 1 doesn't block it.
+**This contradicts MuonOS `docs/connectivity/SPEC.md:1077-1080`** (AP-10: Bluetooth "explicitly not built"). Phase 2 needs that SPEC amended first. The design stays as written, so phase 1 doesn't block it:
 
-- **Radio.** The CM4's CYW43455 carries Wi-Fi and Bluetooth on one radio, managed by BlueZ.
-- **Daemon.** A new `muon-setup-ble` daemon **advertises only** while the marker is absent, or while the panel's "Add a phone or computer" screen is open. The rest of the time it isn't listening, which keeps it out of the GATE-1 census; declare it in `/etc/muon3d/listeners.d` for the times it is.
-- **GATT.** One service with three characteristics:
-  - `request` (write): JSON-RPC, `{ "id", "method": "server.muon.setup.network", "params": {…} }`, chunked;
-  - `response` (notify);
-  - `state` (notify): `notify_muon_setup_changed` bodies.
-  The methods are exactly the `muon_setup` RPC names. There is no second API.
-- **Talking to Moonraker.** The daemon calls Moonraker over a Unix socket, checked with SO_PEERCRED like `muon_gateway`. `muon_setup` classifies it as caller kind `bluetooth`, with the same rights as `hotspot`.
-- **Security.**
-  - A SPAKE2 exchange keyed with a 6-digit code shown on the panel.
-  - AES-GCM session encryption for every message after the key exchange.
-  - A knob confirmation on the panel before the first write.
-  - Wi-Fi secrets are accepted only on an encrypted session.
-  - Improv Wi-Fi's "press to authorise" is the prior art. Its message set can't carry a region, so adapt it rather than adopt it.
-- **Clients.** Web Bluetooth in Chrome and Edge (desktop and Android) and the future app. There is no iOS Safari or Firefox support, which is why the hotspot path comes first.
-- **Bench.** Test Bluetooth and Wi-Fi coexistence (AP + STA + BLE) before enabling it.
+- **When it listens.** A `muon-setup-ble` daemon advertises only while setup is incomplete, or while "Add a phone or computer" is open.
+- **What it offers.** One GATT service carrying `muon_setup`'s JSON-RPC methods.
+- **Security.** SPAKE2, keyed with a 6-digit code shown on the panel, AES-GCM, a knob confirmation before the first write, and Wi-Fi secrets only over an encrypted session.
+- **Plumbing.** It reaches Moonraker over a Unix socket checked with SO_PEERCRED. It's a GATE-1 listener, declared in `listeners.d`.
+- **Prerequisite.** Coexistence tests: AP, station and BLE together.
 
 ## 9. Bench measurements (add to KAN-329)
 
 | # | Measure | Why |
 |---|---|---|
-| B1 | How long `ap0` is gone during `POST /region/country`, and whether iOS and Android rejoin by themselves afterwards | The phone path's first drop |
-| B2 | How long `ap0` is gone when `wlan0` joins on channels 1, 6, 11, 13, 36 and 100 (DFS) | The second drop. Does the AP come back on DFS channels? |
-| B3 | Whether the iOS captive-portal window closes and reopens on B1 and B2, and whether the reopened page restores from state | The phone path's feel |
-| B4 | Android captive behaviour after a Wi-Fi QR join on Pixel and Samsung (latest two OS versions): opens by itself, or a notification? | Whether the URL QR code is needed |
-| B5 | The `address=/#/::` AAAA answer on the shipped dnsmasq | So dual-stack phones don't stall |
-| B6 | Time from QR scan to page visible, and from Start to Connected (10 runs, iOS and Android) | [01-flow.md §9](01-flow.md#9-timing-targets) targets |
+| B1 | How long `ap0` is gone during `POST /region/country`, and whether iOS and Android rejoin on their own | The drop when the region is confirmed |
+| B2 | How long `ap0` is gone when `wlan0` joins on channels 1, 6, 11, 13, 36 and 124 (DFS), and whether each phone follows onto 5 GHz | The drop at join |
+| B3 | Whether the iOS captive-portal window closes and reopens on B1/B2, and whether the page restores from state | How the phone path feels |
+| B4 | Android captive behaviour after a Wi-Fi QR join, on Pixel and Samsung | Whether the URL QR code is needed |
+| B5 | The AAAA answer from `address=/#/::` on the shipped dnsmasq | Dual-stack phones |
+| B6 | QR scan to page visible, and Start to Connected, over 10 runs each on iOS and Android | [01-flow.md §9](01-flow.md#9-timing-targets) |

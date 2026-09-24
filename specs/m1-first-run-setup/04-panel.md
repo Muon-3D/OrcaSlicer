@@ -1,276 +1,295 @@
 # 04 · Panel screens (MuonUI)
 
-**Repo:** `Muon-3D/MuonUI`. MuonOS pins it as a submodule and in `recipes/muon-ui/files/MuonUI.pin`. It is Vue single-file components with Vuetify, Vite, TypeScript and Vitest. It runs as a Chromium kiosk under `cage`, served by nginx on `127.0.0.1:100`, and its `^~ /server/` block goes to Moonraker.
+**Repo:** `Muon-3D/MuonUI` (checked at `main` `f5ffa7c`). MuonOS pins it as a submodule and in `recipes/muon-ui/files/MuonUI.pin`.
 
-The knob arrives through `SKControllerStore`, which talks to the sk_daemon WebSocket. There is an on-screen keyboard in `src/components/keyboard/KeyboardKeys.ts` and a Wi-Fi manager in `WifiManagerView.vue`. MuonUI#31 (`03bdbe3`) added a setup route with a Region screen. KAN-346 added a Settings HOTSPOT card that shows the SSID and key as text.
+**Stack:**
 
-> The MuonUI repo wasn't available when this spec was written, so the file paths below are proposals. The implementing agent should first read `src/router/index.ts`, the MuonUI#31 setup route, `SKControllerStore`, `KeyboardKeys.ts`, `KnobMenu` and `hotspotGuard.ts`. The setup here then **extends** the MuonUI#31 route rather than adding a second one.
+- Vue 3.5, Vuetify 3.13, Pinia 2.3, vue-router 4 in hash mode (`src/router/index.ts`), Vite 5.
+- Vitest 2 with happy-dom.
+- It runs as a Chromium kiosk under `cage`, served by the loopback-only nginx vhost on `:100`.
+- The vhost's CSP is `script-src 'self'; img-src 'self' data:; connect-src 'self' …`. Anything new must be bundled, and images must be inline SVG or `data:`.
+- The shell is a white 480×480 circle using the Vuetify **light** theme. Tokens live in `src/styles/m3d-tokens.css`.
+
+**Read `AGENTS.md` first.** It is the repo's own conventions file. Note that its mention of `WifiSubMenuView.vue` is stale.
+
+## 0. Open PRs this work builds on
+
+| PR | State | What to do |
+|---|---|---|
+| [Muon-3D/MuonUI#31](https://github.com/Muon-3D/MuonUI/pull/31) | Draft | It adds the `/setup` route (`src/views/screens/SetupView.vue`), `src/components/RegionPicker.vue`, `src/helpers/regionCountries.ts` (`SPOKEN_IN`, `Intl.DisplayNames`), `src/helpers/regionPrompt.ts` (`regionPromptFor`, `regionPromptMessage`), the connect-time region prompt in `WifiManagerView`, a REGION Settings card and `src/aux_api/regionApi.ts`. **Build the setup flow on #31's branch, with its author's agreement.** Keep the route, `RegionPicker`, `regionCountries`, `regionPrompt` and `regionApi`. Replace `SetupView.vue`'s contents. Remove #31's `aux.setup.get()` and `aux.setup.complete()` calls (in `App.vue`'s `openSetupIfThisPrinterHasNeverBeenSetUp` and in `finish()`), because `muon_setup` owns the marker. |
+| [Muon-3D/MuonUI#39](https://github.com/Muon-3D/MuonUI/pull/39) | Open | The KAN-339 Wi-Fi overhaul: `src/aux_api/wifiService.ts`, and `GET /wifi/saved`, which needs MuonOS#210. #31, #39 and this work all edit `WifiManagerView`'s `connectToSelected`, so land them in that order: **#39, then #31, then UI-2.** |
+| [Muon-3D/MuonUI#47](https://github.com/Muon-3D/MuonUI/pull/47) | Open | Adds the PROTECTION Settings card (SEC-8) at order 2. |
+| [Muon-3D/MuonUI#46](https://github.com/Muon-3D/MuonUI/pull/46) | Draft | Adds `CircularScrollView.vue`, `SideBackButton.vue` and an `html.reduced-motion` class (on by default). Use them once merged. |
 
 ## 1. Architecture
 
-| Proposed file | What |
+| File | What |
 |---|---|
-| `src/services/setup/client.ts` | HTTP to `/server/muon/setup*` and a subscription to `notify_muon_setup_changed` over MuonUI's existing Moonraker WebSocket. It follows the reconnect rules in [05-phone-setup-page.md §4](05-phone-setup-page.md#4-client-and-reconnect-rules), with a 1 s retry and a `GET` after each reconnect. |
-| `src/stores/setup.ts` | The latest state, plus panel-only UI state such as the focused item, the keyboard buffer and a dismissed "here or phone" flag. Use whatever store pattern `SKControllerStore` uses. |
-| `src/views/setup/SetupView.vue` | The route view. It picks the screen with `screenFor(state, local)`, a pure function with unit tests, like the phone page's. |
-| `src/views/setup/screens/*.vue` | One component per screen below. |
-| `src/components/setup/RingProgress.vue` | The progress arc around the rim. |
-| `src/components/setup/RingKeyboard.vue` | The rim keyboard (§4). |
-| `src/components/setup/SetupQr.vue` | QR rendering for a round display (§5). |
-| Router guard | At boot and on every navigation, it redirects to `/setup` while `state` is `new` or `in_progress`. The only exception is when the owner opened a Settings screen from inside setup (§6). |
+| `src/moonraker/useMoonraker.ts` | Keep the transport here, as AGENTS.md asks. Add typed helpers that call `muon_setup` over the existing WebSocket JSON-RPC: `useMoonraker().client.call('server.muon.setup.network', {...})`. JSON-RPC keeps the error messages, which `client.post` drops on non-2xx, and it skips the HTTP Host and Content-Type checks. |
+| `src/stores/setupStore.ts` | A **setup-style** Pinia store, like `updateStore.ts`. It holds the latest `muon_setup` state plus panel-only UI state. It subscribes with `client.onNotification('notify_muon_setup_changed', ([s]) => apply(s))`, re-fetches `server.muon.setup` in `client.onOpen(...)`, and starts from `moonrakerStore.init()`. The client already reconnects every 1 s. |
+| `src/helpers/setupScreen.ts` | A pure function, `screenFor(state, local) → ScreenId`, with unit tests. It is the only thing that decides which screen shows. |
+| `src/views/screens/SetupView.vue` | #31's route view, rewritten to render whatever `screenFor` returns. |
+| `src/components/setup/*.vue` | One component per screen below. |
+| `src/helpers/setupQr.ts` | Add the `qrcode` dependency and render inline SVG with `QRCode.toString(text, {type: 'svg', errorCorrectionLevel: 'M', margin: 4})`. The CSP blocks `blob:`. It must build on Node 18, which is in the CI matrix. |
+| `src/i18n/` and `src/locales/{en,de,fr,es,it}.json` | **UI-0.** MuonUI has no i18n today. Add `vue-i18n` and load all five catalogues at startup: P1 shows each language's own title as the knob passes it, and the ready-manifest `title_key`s need them. Use plain `en`, not #31's `en-GB`. |
+| `src/dev/mockBackend.ts` and `mockServer.ts` | Add `server.muon.setup*`, and push `notify_muon_setup_changed` built from `specs/m1-first-run-setup/fixtures/`, so `npm run dev:mock` shows every screen. |
 
-- **Rendering rule.** The panel renders `muon_setup` state and sends it intents. It never calls `/server/aux/wifi/*` directly during setup; `muon_setup` does that.
-- **Existing screens.** Reuse the existing `WifiManagerView.vue` pieces (list rows, signal icons) and the MuonUI#31 region screen's pieces wherever they fit.
+**Routing:**
 
-## 2. Knob and display model
+- Keep #31's check at mount, but read `setupStore.state` instead of Aux `/setup`.
+- Also watch the store. Whenever the state is `new` or `in_progress` and the route isn't `setup`, call `router.replace({name: 'setup'})`. This also covers a reset.
+- While on `/setup`, suppress `App.vue`'s global update prompt (lines 493–501) and its rollback notice; P10 covers updates.
 
-**The display:**
+**Talking to other services:**
 
-- It is a 480×480 round DSI panel. Keep content inside the inscribed square (339×339, centred) unless it is deliberately on the rim: the progress ring, the ring keyboard and the list wheel's fade.
-- Minimum text size is 18 px for body text and 28 px for titles. The display is read at arm's length.
+- **During setup the panel doesn't call Aux Wi-Fi routes.** `muon_setup` does.
+- **Exceptions:**
+  - reading the hotspot credentials for the QR code (§3 P2);
+  - muon-link link confirm and cancel, through `/muon-link/` (OS-10).
 
-**The knob:**
+## 2. Knob and display
 
-| Input | Meaning |
-|---|---|
-| Turn | Move focus one item per haptic detent. At the ends of a list there is a hard end stop, with no wrap-around. On the language wheel and the ring keyboard, focus wraps. |
-| Press | Choose the focused item. |
-| Press and hold (≥ 600 ms) | Back: `goto` the previous non-hidden step, or leave a sub-screen. On P1 (language) it does nothing. |
+**Knob input:**
 
-**Progress.** The rim ring fills to `index(cursor) / count(visible steps)`. It uses the device accent `#80d6d1` on a `#1d2427` track.
+- Screens use `KnobMenu.vue` with `v-knob-item` (`src/directives/knobItem.ts`).
+- **Actions fire on release.**
+- Use `holdKnob()` / `holdDuring()` (`src/helpers/knobHold.ts`) during async work.
 
-**Motion.** Screens slide horizontally: forward goes left, back goes right. The motion runs 180 ms with `cubic-bezier(0.2,0,0,1)` and is off when reduced motion is set.
+**Back:**
+
+- Back is the existing **left-rail Back item at order 0**: `SideBackButton.vue` from #46, or the pattern in `SettingsView.vue`.
+- There is **no** press-and-hold Back. MuonUI has no long-press primitive, and a hold would clash with the global 5 s power-menu hold (`App.vue:342–347`, `622–634`).
+- P1 has no Back item.
+
+**Haptics** (`src/haptics/profiles.ts`):
+
+- Lists use `menu()`, which has soft end stops.
+- The language wheel uses `menuWrapping()`.
+
+**Confirmations.** Actions that commit something use `Modal.vue` with `weightedCommit`: the link confirm, skipping Wi-Fi, stopping linking, and unlinking.
+
+**Layout and colour:**
+
+- Centre content with `padding: 24px 56px`, as #31 does, since there is no safe-area helper.
+- Use the type scale from `SettingsView.vue` and `Modal.vue`.
+- Use the tokens `--m3d-accent` for highlight and progress and `--m3d-surface-2` for tracks.
+
+**Progress** uses `ArcProgress.vue`, filled to `index(cursor) / count(visible steps)`.
+
+**Motion.** Honour both `prefers-reduced-motion` and #46's `html.reduced-motion`.
 
 ## 3. Screens
 
-Screen letters A–J match the mockups on the design page. There is no P3: the separate country screen was removed when the region moved into the join (P5b, README D7).
+Screen letters A–J match the mockups on the design page. There is no P3: the separate country screen was removed (README D7).
 
 ### P1 · Language
 
 - **Content:**
-  - A wheel of the configured languages written in their own language and sorted by endonym (KAN-324): Deutsch, English, Español, Français, Italiano.
+  - A `menuWrapping` wheel of the five languages, each in its own language, sorted by endonym: Deutsch, English, Español, Français, Italiano.
   - Focus starts on English.
-  - The title ("Welcome") and the hint ("Turn to choose · Press to select") are shown **in the focused language**, so a person who can't read English still knows what to do.
-- **Press** posts `language` and goes to P2.
-- **Nothing else** is on this screen. No QR code yet, because every later screen depends on the language.
+  - The title ("Welcome") and the hint ("Turn to choose · Press to select") show **in the focused language**.
+- **Press:** posts `language`.
 
 ### P2 · Here or on a phone (A)
 
-- **Shown when** the cursor is at `network`, the driver is `null`, and the owner hasn't pressed through this screen before.
-- **Content**, based on `hotspot.clients` and the driver:
+- **Shown when:**
+  - the cursor is at `network`;
+  - the driver is `null`;
+  - this screen hasn't been passed before.
+- **Hotspot SSID and key.** Use the same call the HOTSPOT card uses: `aux.ap.apShowCredentialsWifiApShowGet()`. On `:100`, nginx rewrites `/server/aux/wifi/ap/show` straight to Aux with `X-Muon-Local-UI: 1`. That header is the only way to get the key (07 S1). Never log the key or store it.
+- **The QR code depends on `setupStore.state.hotspot.clients`,** which `muon_setup` reads from Aux `POST /wifi/ap/count`:
 
-  | State | QR code | Text |
+  | State | QR | Text |
   |---|---|---|
-  | No station on `ap0` | Wi-Fi join QR (§5) | "Set up with your phone" / "Scan with the camera" / "or press to set up here" |
-  | At least one station, no phone driver | URL QR `http://10.42.0.1/setup` | "Phone connected" / "If the page didn't open, scan this" / "or press to set up here" |
+  | No station | Wi-Fi join (§5) | "Set up with your phone" / "Scan with the camera" |
+  | A station, no phone driver | `http://10.42.0.1/setup` | "Phone connected" / "If the page didn't open, scan this" |
   | A phone claims the driver | – | Go to P8 |
 
-- **Turn** reveals the network details, the same values as the HOTSPOT card (KAN-346): "Network **Muon-walnut-8987**" and "Password **<12-char key>**". These are for laptops and anyone who can't scan. Turning back returns to the QR code.
-- **Press** claims `driver=panel` and continues to P4.
-- **The hotspot must be up** on this screen. If it's down, the panel asks Aux to bring it up (AP-4: up while the station isn't connected).
+- **Items:**
+  - **Set up here** (focused) claims `driver=panel`.
+  - **Show network details** shows the SSID and key as text.
+- **The hotspot is up during setup** because of H1 ([03-printer-os.md §1](03-printer-os.md#1-hotspot-lifecycle)). The panel doesn't raise it.
 
 ### P4 · Wi-Fi list (C)
 
-- **Rows, in order:**
-  1. **Scan again**.
-  2. The networks, strongest first. Each shows the SSID, a lock icon and signal bars.
-  3. **Other network…**
-  4. **Skip for now**.
-- **Rescan.** The list rescans on entry. A small phone icon in the header re-opens the P2 QR screen.
-- **Choosing a network:**
-  - A WPA2 or WPA3 Personal network opens P5.
-  - An open network goes straight to P5b.
-  - A saved network joins with its stored secret. If the join fails with `wrong_password`, P5 opens.
-  - An **Enterprise** network opens the "Use your phone" screen: "Enterprise networks need a phone or computer", the URL QR and "Press to go back".
-  - **Skip for now** asks for confirmation: "Walnut will stay offline. Its hotspot stays on so you can reach it." (Confirm / Back).
-  - A network with `channel_permitted: false` is listed with the muted note "Not available in this region". Choosing it shows "That network is on a channel your printer is not set for." On a US-locked unit it adds "This printer is set for the United States. Contact support." The action is **Back**.
-- **No valid token** (`region.market == "none"`): the first time this screen opens, show "This printer needs re-registering" with the support code, then the list. Networks on channels 1–11 still work.
-- **Ethernet.** If `ethernet.address` is set when this screen opens, the screen shows "Connected by cable · 192.168.1.37" with **Continue**, which posts `network {kind: ethernet}`, and **Use Wi-Fi instead**.
+- **Data** comes from `server.muon.setup.networks`.
+- **Reuse** `WifiStrengthIcon.vue` or `getWifiIconName()`, `VerticalDotScrollbar.vue`, and the Wi-Fi row styles.
+- **Items, in order:**
+  1. Back
+  2. Scan again
+  3. The networks, strongest first
+  4. Other network…
+  5. Skip for now, confirmed by a `Modal`: "Walnut will stay offline. Its hotspot stays on so you can reach it."
+- **Choosing a network runs #31's `regionPromptFor(state.region, network.channel)`:**
+  - **`join`:** go to P5, or straight to joining if the network is open or saved. If a saved network fails with `wrong_password`, open P5. #39's `shouldOfferReauthentication()` does the same.
+  - **`offer-switch`:** #31's `Modal`, "Change your printer's region?", with **Change region** and **Not now**. **Change region** joins with `region` set to `state.region.detected_country`, and `muon_setup` applies it before joining.
+  - **`locked`:** a `Modal` with "This printer is set for the United States. Contact support." and **OK**.
+- **Enterprise networks** show the "Use your phone" QR screen.
+- **Ethernet with an address** shows "Connected by cable · 192.168.1.37" with **Continue** (posts `network {kind: ethernet}`) and **Use Wi-Fi instead**.
+- **No valid token** (`region.market == "none"`): the first time this screen opens, show "This printer needs re-registering". Networks on channels 1–11 still work.
 
-### P5 · Password, ring keyboard (D)
+### P5 · Password
 
-- **Centre:** the SSID, and a password field that shows dots with the last character visible for 1 s. **Show** toggles plain text.
-- **Rim:** the ring keyboard (§4).
-- **Done** goes to P5b.
-- **Back:** press and hold leaves to P4, after a confirmation if the buffer isn't empty.
-
-### P5b · Join and region (B)
-
-This screen follows KAN-321 Rev 11. The region is confirmed as a line at the moment of joining, not asked up front.
-
-- **Content:** "Join / **HomeWiFi**?", then the line **Region: United Kingdom**, and the rows **Join** (focused) and **Change region**.
-  - The country comes from the chosen network's `region_suggestion`.
-  - When the suggestion's source is `default` (the token's default country), the line reads "Region: Germany · Is this right?" so the owner looks at it.
-  - When there's no suggestion at all, **Join** is disabled and focus starts on **Choose region**.
-- **Skipped entirely** when `region.market == "locked"`, or when the country is already declared and matches the suggestion (for example, a later change of network). P5 goes straight to P6.
-- **Join** posts `network` with `region` and goes to P6. The phases start with "Setting the region…" when an apply is needed.
-- **Change region** opens the picker, in three tiers:
-  1. The detected country, if any, with **Confirm**.
-  2. "Where <language> is spoken": `region.for_language`.
-  3. **All countries…**: first `region.all`'s continents, then that continent's countries. If only one continent is offered, go straight to the country list.
-
-  The picker is only ever a list from `options.region`. There is no free text. Choosing a country returns here with the new line.
-- **Failures:**
-  - `region_apply_failed`: "We could not apply that region." with **Try again** and **Choose another region**. After two failures, a third option appears: "Save a diagnostic bundle" (KAN-378).
-  - `needs_reregistration`: "This printer needs re-registering" and the support code.
-  - `region_not_offered`: "This printer is not registered for that country."
+- **Keyboard.** Use `KeyboardOverlay.vue` with `KeyboardRing.vue`. Add a `KeyboardSet` to `src/components/keyboard/KeyboardSets.ts`: `AlphaBoard` plus a **"use phone"** key, which opens the P2 URL QR code and keeps the buffer. Shift stays a toggle.
+- **Password field.** Add a **Show** toggle and a 1 s reveal of the last character typed. The current field (`WifiManagerView.vue:92–101`) has neither.
+- **Submit** posts `network`.
 
 ### P6 · Joining
 
-- **Content:** a checklist driven by `op`: *Setting the region* (only while `op.kind == "region_apply"`), *Password accepted*, *Got an address*, *Checking internet*, *Checking for updates*. Then P7 or an error screen.
-- **Press** does nothing while joining.
-- **Press and hold** asks "Cancel joining?" and then calls `network/cancel`.
+- **A checklist driven by `op`:**
+  - *Setting the region* (only for a switch before joining)
+  - *Password accepted*
+  - *Got an address*
+  - *Checking internet*
+  - *Checking for updates*
+- **Back** asks through a `Modal`, then calls `network/cancel`.
 
 ### P7 · Connected (E)
 
-- **Content:** "Connected", then the SSID, then `hostname_local` (`Muon-walnut-8987.local`) with the IPv4 address under it, then "Press to continue".
-- **`internet: false`** adds "No internet · Printing over the network still works."
-- **`portal_required`** shows a warning variant: "HomeWiFi needs a sign-in page, which a printer can't complete." with **Choose another network** and **Continue anyway**.
-- **Error screens** for the other failures follow [08-errors.md](08-errors.md). Each has one primary action (press) and one secondary action (turn to it).
+- **Content:** "Connected", the SSID, `hostname_local`, and the IPv4 address.
+- **Variants:**
+  - `internet: false` adds "No internet · Printing over the network still works."
+  - `internet: "portal"` shows the warning variant, with **Choose another network** and **Continue anyway**.
+- **Errors** follow [08-errors.md](08-errors.md).
+
+### P7a · Region (B)
+
+This follows KAN-321 Rev 11 and #31: the region comes from the network the printer joined, and the owner confirms it after joining.
+
+- **Shown when:**
+  - P7 has finished;
+  - `network.region_confirmed` is `false` ([02-setup-api.md §5.6](02-setup-api.md#56-joining-a-network));
+  - the market isn't `locked` or `none`.
+- **Content:** "Region / **United Kingdom**". The country is `state.region.detected_country` when `basis` is `joined-network`, otherwise `options.region.preselect`. Names come from `regionCountries.ts`.
+- **Items:**
+  - **Confirm** (focused) posts `region {country}`.
+  - **Change** opens #31's `RegionPicker.vue` (detected, then `SPOKEN_IN` for the language, then the rest by name) and posts `region` with the choice.
+- **While `op.kind == "region_apply"`:** "Applying… (about 8 seconds)". Wi-Fi and the hotspot drop and come back.
+- **On failure:** the message for its code ([08-errors.md §2](08-errors.md#2-region-time-zone-and-clock)).
 
 ### P7b · Time zone
 
-- **Shown only on the panel path**, after P7, when `clock.tz` isn't set by a phone and the declared country has more than one zone ([01-flow.md §2.2](01-flow.md#22-time-zone-and-clock)).
-- **Content:** "Which time zone?" with the zones for the country, most populous first. Each row shows the zone's city name and the current local time, for example "Chicago · 14:05".
-- **Press** posts `timezone`. There is no skip: the first row is a good default, and pressing through accepts it.
+- **Shown only** when no phone has set the time zone and the declared country has more than one zone.
+- **Content:** the zones, most populous first, each with its local time.
+- **Press:** posts `timezone`.
 
 ### P8 · Following a phone (F)
 
 - **Shown while** `driver.kind` is `phone` or `web` and the claim hasn't lapsed.
-- **Content:** "Setting up from a phone" (or "from a computer" for `web`), then "<Step name> · step n of N". The ring fills as usual.
-- **During operations:** while an `op` runs, the matching progress (setting the region, joining) is shown *here too*, so the owner can watch from either screen.
-- **Results:** when a join finishes, the result (P7 or the error) is shown for 5 s and then returns to P8. The panel must show the result even if the phone has dropped off.
-- **Press** claims `driver=panel`, and the panel continues at the cursor.
-- **Lapsed claim** (more than 30 s without renewal): the screen reads "The phone went quiet" with **Continue here** (press). It doesn't take over automatically.
+- **Content:** "Setting up from a phone" (or "from a computer"), then "<Step> · step n of N", with `ArcProgress`.
+- **Operations:** an `op`'s progress shows here too, and a join result shows for 5 s.
+- **Continue here** claims `driver=panel`.
+- **Lapsed** (after 30 s): add "The phone went quiet".
 
 ### P9 · Name
 
-- "This printer is called / **Walnut**" with **Keep** (focused) and **Rename**.
-- Rename opens the ring keyboard with the current name selected. The name is 1–32 characters and letters are allowed in any case. It is then posted with `name`.
+- "This printer is called / **Walnut**", with **Keep** (focused) and **Rename**.
+- **Rename** opens `KeyboardOverlay` with `AlphaBoard`, for 1–32 characters.
+- Either choice posts `name`.
 
 ### P10 · Update
 
 - **Shown only if** `update.status == "pending"`.
-- **Content:** "Update available / **1.4**", "About 1 minute" if staged (KAN-358), otherwise "A few minutes". **Install now** (focused) and **Later**.
-- **Installing:** the full-screen updating state (KAN-215 if it exists, otherwise a progress ring from `op.progress`), then the reboot.
-- **After the boot,** the panel resumes at P11. If the update rolled back: "The update didn't finish. Walnut is still on 1.3.2." with **Continue**.
+- **Content:**
+  - "Update available / **1.4**";
+  - "About 1 minute" if the update is staged (KAN-358);
+  - **Install now** (focused) and **Later**.
+- **Install now** posts `update {action: install}`. `muon_setup` starts the install through Aux `POST /update/install`.
+- **UI-3 must make `updateStore` raise the existing `UpdatingOverlay.vue` (KAN-215)** whenever Aux reports an install in progress, not only when the panel started it.
+- The existing rollback `Modal` (`App.vue:87–104`) covers `update_failed`.
 
 ### P11 · Remote access (G)
 
 - **Title:** "Use Walnut away from home?"
-- **Options,** each with one sentence of copy:
-
-  | Option | Copy | Focus |
-  |---|---|---|
-  | **Keep it on my network** | "Walnut never contacts Muon. You print from this network." | **Focused by default** (Tier 1) |
-  | **Link a Muon account** | "Print and watch from anywhere. Muon never sees your files." | |
-  | **My own server** | Not offered in phase 1: `capabilities.self_hosted` is `false` ([02-setup-api.md §5.9](02-setup-api.md#59-remote-access)). | |
-
-- **Link a Muon account** posts `remote {mode: cloud}` and goes to P12.
-- **Unavailable:** if `network.internet` isn't `true` or the clock isn't synced, *Link a Muon account* is disabled with "Needs internet", and pressing it explains why.
-- **Do this later** is the last row. It posts `remote {mode: later}`.
+- **Items:**
+  - **Keep it on my network** (focused): "Walnut never contacts Muon. You print from this network."
+  - **Link a Muon account**: "Print and watch from anywhere. Muon never sees your files." It's disabled, with "Needs internet", unless `network.internet` is `true` and the clock is synced.
+  - **Do this later**.
+- "My own server" isn't offered in phase 1.
 
 ### P12 · Link code (H)
 
-This is the account-link screen (NET-10(d), ADR 0018, muon-link#24). MuonUI doesn't have one yet. The screen renders `remote.link`, muon-link's `LinkPhase` ([02-setup-api.md §5.9](02-setup-api.md#59-remote-access)).
+P12 renders `remote.link`, which is muon-link's `LinkPhase` ([02-setup-api.md §5.9](02-setup-api.md#59-remote-access)).
 
-- **`connecting`:** "Getting a code…" with a spinner.
+- **`connecting`:** "Getting a code…"
 - **`code`:**
-  - The code in large mono digits, grouped in threes (`482 913`). Its length is the orchestrator's choice, so handle any length.
-  - A QR code encoding `remote.link.url`, as given.
+  - The code in large mono digits, grouped in threes. Handle any length.
+  - A QR of `remote.link.url`, exactly as given.
   - "Scan, or enter it at / **app.muon3d.com**".
-  - The ring counts down to `expires_at`. `muon_setup` renews the code automatically after that.
-- **`offer`:** the confirm screen reads "Link Walnut to / **jed@example.com**?", with the authority key's short form (`fingerprint`, shown as `9f3c 1a7b e2d0 4c11`) under it. LINK-3 makes the key what is being confirmed; the account name is a label.
-  - The buttons are **Confirm** and **Cancel**, with focus starting on **Cancel** so a stray press can't link.
-  - **Confirm** calls muon-link's `POST /link/confirm` **directly**, at `/muon-link/link/confirm` through the `:100` vhost (OS-10). **Cancel** calls `/muon-link/link/cancel`. Neither goes through Moonraker.
-- **`linked`:** "Linked to jed@example.com", then continue.
-- **`failed`:** the `link_failed` error screen, with `message`.
-- **Back:** press and hold asks "Stop linking?" and then calls `remote/cancel`.
+  - `ArcProgress` counts down to `expires_at`. `muon_setup` renews the code after that.
+- **`offer`:** a `Modal` with `weightedCommit`: "Link Walnut to / **jed@example.com**?", with the authority key's short form (`fingerprint`, shown as `9f3c 1a7b e2d0 4c11`) underneath (LINK-3).
+  - Focus starts on **Cancel**.
+  - **Confirm** calls `POST /muon-link/link/confirm`, and **Cancel** calls `POST /muon-link/link/cancel`. Both go through the `:100` location added by OS-10; that's same-origin, so the CSP allows it.
+- **`linked`:** "Linked to jed@example.com".
+- **`failed`:** the `link_failed` error screen.
+- **Back** asks "Stop linking?" through a `Modal`, then calls `remote/cancel`.
 
 ### P13 · Ready to print (I)
 
-- **Content:** the checklist from `options.ready_manifest`. Each item row shows its state.
-- **Choosing an item** opens its screen:
-  - **`confirm`** items show an illustration and instructions, then "Done" (press), which posts `ready {item, action: confirm}`.
-  - **`macro`** items show "Start" (press), which posts `ready {item, action: start}`. Progress shows while `op.kind == "ready_item"`, then the result. A failure shows the gcode error message and **Try again** / **Skip**.
-  - **`panel_flow`** items open the existing MuonUI flow (e.g. load filament). When it returns successfully, the panel posts `ready {item, action: confirm}`.
-- **Finishing.** The last row is **Finish** once every required item is done, or **Skip for now** before that. Either one posts `finish`.
+- **Content:** the checklist from `options.ready_manifest`.
+- **Item kinds:**
+  - **`confirm`:** an illustration from `public/setup/`, then **Done**, which posts `ready {item, action: confirm}`.
+  - **`macro`:** **Start** posts `ready {item, action: start}`. Progress shows during `op.kind == "ready_item"`. A failure shows its message with **Try again** and **Skip**.
+  - **`panel_flow`:** the existing MuonUI flow runs, then the panel posts `confirm`.
+- **The last item** is **Finish** once the required items are done, and **Skip for now** before that. Either posts `finish`.
 
 ### P14 · Ready (J)
 
-- "All set / **Walnut is ready**"
-- "Send a print from OrcaSlicer, or open / **Muon-walnut-8987.local**"
-- A URL QR `http://<ipv4>/` for phones on the same network. It isn't shown when the network was skipped.
-- If any steps were skipped: "Still to do: Connect to Wi-Fi · Link a Muon account"
-- **Press** goes to home.
+- **Content:**
+  - "All set / **Walnut is ready**";
+  - "Send a print from OrcaSlicer, or open / **Muon-walnut-8987.local**";
+  - a URL QR code for `http://<ipv4>/`;
+  - the skipped steps.
+- **Done** goes to `home`.
 
-### Home: "Finish setup" card
+### Home: "Finish setup"
 
-- **Shown** on the home screen when `state == complete`, a step among `network`, `remote` and `ready` is `skipped`, and `!card_dismissed`.
-- **Opening it** lists those steps. Choosing one runs that step's screens only and then returns home.
-- **Dismiss** is its own row and posts `card/dismiss`.
+- **Where:** Home is the 7-slot `RadialMenuScreen` in `HomeState.vue`, and #46 uses 6 of the 7 slots. Add a **Finish setup** radial item in the free slot.
+- **Shown only when:**
+  - the state is `complete`;
+  - one of `network`, `remote` and `ready` is `skipped`;
+  - `!card_dismissed`.
+- **It opens** a list of those steps plus **Dismiss**, which posts `card/dismiss`.
 
-### Settings entries
+## 4. Settings entries
 
-Add these, or extend the existing ones:
+Settings runs inside `CircularScrollView` (#46). Renumber the knob orders:
 
-| Entry | What |
-|---|---|
-| **Add a phone or computer** | The P2 screen outside setup. It brings the hotspot up if it's down (AP-5) and shows the Wi-Fi QR code, the details and the URL QR code. This builds the missing AP-3 QR. |
-| **Link to account** | Shows the link state at all times, including "Not linked" (LINK-8). Unlinked: P12 outside setup (the app fallback copy tells owners to use it: "Press the knob, then open Settings › Link to account."). Linked: the account, the key's short form, and **Unlink**, which calls `/muon-link/link/unlink` after a confirmation. |
-| **Region** | The existing MuonUI#31 region screen, unchanged. It calls Aux `/region/*` directly, because the region is a device setting, not a setup step. After an apply, `muon_setup` sees the change the next time it reads `GET /region`. |
-| **Wi-Fi** | The existing `WifiManagerView.vue`. Choosing a network while setup is complete also goes through `muon_setup` (`network`), so the phone page and the panel stay in step. |
+| Order | Card | Source |
+|---|---|---|
+| 0 | Back | existing |
+| 1 | HOTSPOT (pressing it toggles) | existing, KAN-346 |
+| 2 | **Add a phone or computer** | new. P2 outside setup. Raises the hotspot on request (H4). |
+| 3 | PROTECTION | #47 |
+| 4 | **Link to account** | new. Always shows the state, including "Not linked" (LINK-8). When unlinked it runs P11 → P12. When linked it shows the account, the key's short form, and **Unlink** (a `Modal` with `weightedCommit`, then `POST /muon-link/link/unlink`). |
+| 5 | SOFTWARE check | existing |
+| 6 | DOWNLOAD & UPDATE / RESTART TO UPDATE | existing |
+| 7 | REGION | #31. It calls Aux `/region/*` directly, because the region is a device setting. |
 
-## 4. The ring keyboard
-
-**Rim slots.** 32 slots sit around the rim, 11.25° apart. Slot 0 is at 12 o'clock and they run clockwise:
-
-| Slots | Lower-case layer | Upper-case layer | Symbols layer |
-|---|---|---|---|
-| 0–25 | `a`–`z` | `A`–`Z` | `0`–`9` then ``! @ # $ % & * - _ . , ; : ' " ?`` |
-| 26 | space | space | `/ \ + = ( ) [ ] { } < > ~ ` ^ \|` (extra symbols on a second page, reached with `26`) |
-| 27 | ⌫ delete | ⌫ | ⌫ |
-| 28 | ⇧ caps (one-shot; double press locks) | ⇧ | – |
-| 29 | `123` / `abc` layer switch | | |
-| 30 | 📱 "use phone" (opens the P2 QR screen, keeping the buffer) | | |
-| 31 | ✓ Done | | |
-
-**Using it:**
-
-- **Controls.** The focused slot is enlarged and filled with the accent. One detent moves one slot, and focus wraps. Press types the focused character or activates the control. Press and hold is Back.
-- **Reuse.** Take `KeyboardKeys.ts`'s key sets as the source of symbols so the existing keyboard and this one agree.
-- **Acceleration.** Turning fast (more than 6 detents in 300 ms) skips 2 slots per detent. This keeps a 26-letter rim usable.
-- **Masking.** The typed buffer is shown in the centre. Passwords are masked except for the last character, which is visible for 1 s, and "Show" reveals the whole password.
-- **Target.** Typing a 12-character password should take no more than 60 s for a first-time user. Test it on the bench ([09-testing.md](09-testing.md)).
+The app fallback copy points here: "Press the knob, then open Settings › Link to account." Settings is reached from the Home radial.
 
 ## 5. QR codes
 
 | QR | Payload | Notes |
 |---|---|---|
-| Wi-Fi join (P2) | `WIFI:T:WPA;S:<ssid>;P:<psk>;;` | Escape `\`, `;`, `,`, `:` and `"` in the SSID and PSK with a backslash. Always `T:WPA`, never `nopass`; unlike the Fluidd card bug, the panel has the real key. |
-| Setup page (P2, "Use your phone") | `http://10.42.0.1/setup` | nginx redirects it to `/#/setup`. |
-| Link (P12) | `remote.link.url`, exactly as muon-link returns it | The orchestrator sets the URL. Today that is app.muon3d.com's `/link?code=` landing page. |
-| Printer address (P14) | `http://<ipv4>/` | Use the IP, not `.local`, because Android can't always resolve mDNS. |
+| Wi-Fi join (P2) | `WIFI:T:WPA;S:<ssid>;P:<psk>;;` | Backslash-escape `\`, `;`, `,`, `:` and `"`. Always `T:WPA`. |
+| Setup page | `http://10.42.0.1/setup` | nginx redirects it to `/#/setup` (OS-1) |
+| Link (P12) | `remote.link.url` as given | The orchestrator sets it |
+| Printer address (P14) | `http://<ipv4>/` | Use the IP address, because Android doesn't always resolve `.local` |
 
-**Where the panel gets the Wi-Fi key.** `muon_setup` never puts the hotspot key in its state. The panel reads it through the same panel-only path the HOTSPOT card uses today (KAN-346). If that path is an Aux route, it must stay loopback-only, and it must be added to `muon_floor.FLOOR_PREFIXES` if it goes through Moonraker.
+**Rendering:** inline SVG, error correction M, a 4-module quiet zone on a white square, and modules of at least 4 px.
 
-**Rendering:**
-
-- Error correction level M.
-- Dark modules on a white rounded square with a 4-module quiet zone.
-- Module size ≥ 4 px. The Wi-Fi QR, about 41×41 modules, is then about 200 px, which fits inside the inscribed square with room for a line of text.
-
-## 6. Leaving and re-entering setup
-
-- **Settings during setup.** From any setup screen, the panel's Settings shortcut (if MuonUI has one) is allowed for Wi-Fi, Region, Hotspot and About. Returning goes back to `/setup`. Printing, moving the axes and the file browser are not reachable until `state == complete`. The one exception is a `ready` item's own flow.
-- **Power loss.** The panel resumes at `cursor`. A screen that was mid-operation shows the result of that operation (`interrupted`), not a spinner.
-
-## 7. Tests
+## 6. Tests and checks
 
 | Test | Covers |
 |---|---|
-| `screenFor.spec.ts` | Every screen P1–P14 including P5b and P7b; the region variants (`locked`, `none`, `picker` with an `ap`, `neighbours`, `default` or missing suggestion, and a channel that isn't permitted); a lapsed driver; `op` during P8; and the post-setup card. |
-| `RingKeyboard.spec.ts` | Slot mapping for each layer, wrap-around, acceleration, one-shot and locked caps, masking and the last-character reveal, and that the phone slot keeps the buffer. |
-| `SetupQr.spec.ts` | Wi-Fi escaping, with SSIDs and PSKs containing `;`, `:` and `\`. The PSK must never be logged. |
-| Router guard | Redirects to `/setup` while setup is incomplete, and stops redirecting after `complete`. |
-| On the bench | [09-testing.md](09-testing.md) lists the knob and hardware checks. |
+| `src/helpers/setupScreen.spec.ts` | Every screen, including P7a and P7b. The region variants: `locked`, `none`, and `regionPromptFor` returning `join`, `offer-switch` or `locked`. Also a lapsed driver, an `op` during P8, and the Home item. |
+| `src/stores/setupStore.spec.ts` | With `src/test/fakeWebSocket.ts`: notifications are applied, `rev` ordering holds, and the store re-fetches on reconnect. |
+| `src/helpers/setupQr.spec.ts` | Wi-Fi escaping, and that the PSK is never logged. |
+| Keyboard set spec | The "use phone" key keeps the buffer. |
+
+**Before pushing:**
+
+- Run `npm test` and `npm run build`. CI only builds, so the tests won't run unless you run them.
+- `npm run typecheck` has 24 errors on `main`, so the rule is **no new errors**.
+- There is no lint.

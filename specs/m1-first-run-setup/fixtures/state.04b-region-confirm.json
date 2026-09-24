@@ -1,22 +1,16 @@
 {
   "version": 1,
-  "rev": 15,
+  "rev": 9,
   "state": "in_progress",
-  "cursor": "ready",
+  "cursor": "network",
   "driver": {
-    "kind": "panel",
-    "client_id": "panel",
-    "since": 1790251600.0,
-    "renewed": 1790251600.0,
+    "kind": "phone",
+    "client_id": "5b1f0c7e-9f7a-4f5e-8f0a-2d6f3c1a9b10",
+    "since": 1790251230.0,
+    "renewed": 1790251260.0,
     "lapsed": false
   },
-  "op": {
-    "kind": "ready_item",
-    "id": "op_9",
-    "started": 1790251660.0,
-    "phase": "self_test",
-    "progress": 0.4
-  },
+  "op": null,
   "printer": {
     "name": "Walnut",
     "display": "Walnut · 8987",
@@ -31,18 +25,18 @@
     "address": "10.42.0.1"
   },
   "clock": {
-    "synced": true,
-    "source": "ntp",
+    "synced": false,
+    "source": "phone",
     "tz": "Europe/London",
     "tz_source": "phone"
   },
   "region": {
     "market": "picker",
     "reason": "declared",
-    "declared_country": "GB",
-    "configuration": "gb",
-    "domain": "GB",
-    "surroundings": "settled",
+    "declared_country": null,
+    "configuration": "de",
+    "domain": "DE",
+    "surroundings": "offer",
     "detected_country": "GB",
     "basis": "joined-network",
     "locked": false,
@@ -81,7 +75,7 @@
       "source": "panel"
     },
     "network": {
-      "status": "done",
+      "status": "pending",
       "kind": "wifi",
       "ssid": "HomeWiFi",
       "addresses": [
@@ -90,35 +84,31 @@
       "hostname_local": "Muon-walnut-8987.local",
       "internet": true,
       "error": null,
-      "region_confirmed": true
+      "region_confirmed": false
     },
     "name": {
-      "status": "done",
+      "status": "pending",
       "value": "Walnut",
       "derived": "walnut"
     },
     "update": {
-      "status": "skipped",
+      "status": "pending",
       "current": "1.3.2",
-      "available": "1.4.0",
+      "available": null,
       "error": null
     },
     "remote": {
-      "status": "done",
-      "mode": "cloud",
-      "error": null,
-      "link": {
-        "phase": "linked",
-        "account": "jed@example.com",
-        "connected": true
-      }
+      "status": "pending",
+      "mode": null,
+      "link": null,
+      "error": null
     },
     "ready": {
       "status": "pending",
       "items": [
         {
           "id": "transport_clips",
-          "status": "done",
+          "status": "pending",
           "error": null
         },
         {

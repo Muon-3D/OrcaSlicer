@@ -22,38 +22,12 @@
     }
   ],
   "region": {
-    "market": "locked",
-    "applied": {
-      "country": "US",
-      "config": "us",
-      "declared": true
-    },
-    "default_country": "US",
-    "permitted_channels": [
-      1,
-      2,
-      3,
-      4,
-      5,
-      6,
-      7,
-      8,
-      9,
-      10,
-      11,
-      36,
-      40,
-      44,
-      48,
-      149,
-      153,
-      157,
-      161,
-      165
+    "countries": [
+      "US"
     ],
-    "for_language": [],
-    "all": {},
-    "support_code": null
+    "preselect": "US",
+    "basis": null,
+    "locked": true
   },
   "ready_manifest": {
     "version": 1,

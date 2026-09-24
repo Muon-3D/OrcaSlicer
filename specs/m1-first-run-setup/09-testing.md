@@ -9,8 +9,8 @@ Each work package lists its own unit tests. This file collects them, adds the en
 | Moonraker | `tests/test_muon_setup.py`, `tests/test_muon_link.py`, additions to `tests/test_muon_floor.py`, and a `[muon_setup]` pin next to `tests/test_m1_config_template.py` | `pytest tests/test_muon_setup.py` (install `pytest`, `pytest-asyncio`, `pytest-timeout`) plus `flake8 --max-line-length=88` and `mypy` over `moonraker`, which is what CI runs | [02-setup-api.md §8](02-setup-api.md#8-tests-minimum) |
 | Fluidd | `src/services/muon-setup/__tests__/*`, `Setup.spec.ts`, `AddPrinterDialog.spec.ts`, `discovery.spec.ts`, and the router tests | `npm run lint -- --no-fix && npx vitest run && npm run type-check && npm run circular-check && npm run build` | [05 §11](05-phone-setup-page.md#11-tests), [06 §2.6](06-add-printer.md#26-tests) |
 | Fluidd E2E | `tests/e2e/setup.spec.ts` (Playwright) against `tests/e2e/mock-setup-server.mjs` | `npx playwright test` with `executablePath: '/opt/pw-browsers/chromium'` | §2 |
-| MuonUI | `screenFor.spec.ts`, `RingKeyboard.spec.ts`, `SetupQr.spec.ts`, and a router guard test | The repo's `vitest` script | [04 §7](04-panel.md#7-tests) |
-| MuonOS / Aux | Tests for the new routes (`/wifi/ap/auto_off`, `/wifi/ap/stations`, `/wifi/uplink`, `/wifi/saved`, `/wifi/ca_cert`, `/time*`, `/setup/complete`, `/region/suggest`), W2 error-code mapping, and a secret-logging test over `nmcli_gate.py` | The repo's pytest | [03](03-printer-os.md) |
+| MuonUI | `setupScreen.spec.ts`, `setupStore.spec.ts`, `setupQr.spec.ts` and a keyboard-set spec | `npm test` and `npm run build`; CI only builds | [04 §6](04-panel.md#6-tests-and-checks) |
+| MuonOS / Aux | Tests for the new routes (`/wifi/ap/auto_off`, `/wifi/uplink`, `/wifi/saved`, `/wifi/ca_cert`, `/time*`, `/setup/complete`, `/region/suggest`), W2 error-code mapping, and a secret-logging test over `nmcli_gate.py` | The repo's pytest | [03](03-printer-os.md) |
 | MuonOS image | Config checks: the dnsmasq drop-in is present; the nginx config passes `nginx -t`; `/var/lib/muon3d/setup` is in Rugix persist; no new listener shows up in GATE-1's `network.listeners-declared` | The image CI (`scripts/check-production-hardening.sh` and DevTools checks) | [03 §2](03-printer-os.md#2-captive-portal) |
 | OrcaSlicer | Build on all three platforms, plus the manual checks | `./build_linux.sh -s` etc. | [06 §3](06-add-printer.md#3-orcaslicer) |
 
@@ -26,11 +26,10 @@ Scenarios:
 4. **Captive-window reload.** The page reloads mid-flow. The SSID draft is restored and the password field is empty.
 5. **`stale_rev`.** The server changes the state under the page. The page re-renders and shows the note.
 6. **Region variants.**
-   - `default` source: the line reads "Is this right?".
-   - No suggestion: Connect is disabled until a region is chosen.
-   - Locked unit: no line.
-   - `none` market: the re-registration notice.
-   - Channel not permitted: the row is disabled with its message.
+   - Before joining, `regionPromptFor` gives `join`, `offer-switch` (Change region, then join) or `locked`.
+   - After joining, the region line comes from `joined-network`, or falls back to `preselect`.
+   - Confirm drops the connection for 8 s; the page must restore.
+   - The `locked` and `none` markets show no line.
 7. **Link.** Choose Link a Muon account → a code appears → the code renews after 120 s → `offer` → `linked`.
 8. **Following the panel.** `driver.kind = panel` shows S9, and Continue here takes over.
 
@@ -65,15 +64,15 @@ Record the results in KAN-329. Each row is run from a factory-fresh unit. KAN-35
 | # | Run | Pass when |
 |---|---|---|
 | R1 | Panel only, N1 | Reaches Ready. The ring keyboard enters a 12-character password in ≤ 60 s (first-time user). |
-| R2 | Panel only, N2, EU-tokened unit | The network is listed, the region line shows the United Kingdom, the apply succeeds and the join works (KAN-329 criterion 2) |
+| R2 | Panel only, N2, EU-tokened unit. Needs a signing key and token (OS-2). | The network is listed. If the fallback region doesn't allow ch 13, "Change your printer's region?" appears. The join works, the region line shows the United Kingdom, and the apply succeeds (KAN-329 criterion 2). |
 | R3 | iPhone path, N1 | The page opens by itself within 10 s of joining. Connected in ≤ 3 min. The phone drops and the page restores. The panel shows the result. |
 | R4 | Android path (Pixel and Samsung), N1 | The page opens by itself, or via a notification, or via the URL QR code. Record which (B4). |
 | R5 | iPhone path, N3 and N4 | Measure B1/B2 and record what the owner sees. On N4, if the AP doesn't return, the panel shows the address and the phone page shows "Check the printer's screen". |
 | R6 | Laptop path via the Wi-Fi details (turn the knob on P2), N6 | Enterprise joins with the CA certificate uploaded, and with "Don't check". |
 | R7 | N7 and N8 | Correct warnings. Setup completes. |
 | R8 | N9 | Ethernet is accepted. The hotspot turns off 15 minutes after finish. |
-| R9 | A US-locked unit on a network on ch 13 | "Not available in this region" / "set for the United States" |
-| R10 | A unit with no token | The re-registration notice appears, and ch 1–11 joins work |
+| R9 | A US-locked unit on a network on ch 13 | "This printer is set for the United States. Contact support." |
+| R10 | A unit with no token (today every unit is `no-signing-key`) | The re-registration notice appears. Joins on ch 1–11 work, and setup completes without a region. |
 | R11 | Pull the power during the join, during the region apply, and during the update | It resumes at the same step with `interrupted`, or for the update, the OTA result |
 | R12 | A field unit updated from pre-setup firmware | It does **not** enter setup (`migrated`) |
 | R13 | Link from the phone path | A code appears on the panel and the phone. It's claimed on app.muon3d.com from another device, confirmed on the knob, and remote is done. |
@@ -87,7 +86,7 @@ Record the results in KAN-329. Each row is run from a factory-fresh unit. KAN-35
 
 - [ ] R1–R4 and R7–R16 pass. R5 and R6 are measured and their results recorded.
 - [ ] The median time for the iPhone and Android phone paths from new to Connected is ≤ 3 minutes over 10 runs each.
-- [ ] No password or hotspot key appears in any Moonraker, Aux, nginx or journal log after R1–R16. Check with `grep` over the diagnostic bundle.
+- [ ] No password or hotspot key appears in any Moonraker, Aux or nginx log, or in `journalctl` (including sudo's `COMMAND=` lines; OS-11), after R1–R16. Check both the raw journal and the diagnostic bundle.
 - [ ] No request from the phone page leaves for any host other than the printer. Check with the browser's network log on R3.
 - [ ] GATE-1's listener check passes with no new listeners.
 - [ ] Every automated suite in §1 is green in CI.
