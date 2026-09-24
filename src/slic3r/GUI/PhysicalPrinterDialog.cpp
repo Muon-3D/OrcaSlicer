@@ -48,6 +48,15 @@ namespace GUI {
 
 #define BORDER_W FromDIP(10)
 
+// True when the printer preset is a Muon3D system preset or inherits from one.
+static bool is_muon_printer_preset(const PresetCollection &printers)
+{
+    const Preset *preset = &printers.get_selected_preset();
+    if (!preset->is_system)
+        preset = printers.get_selected_preset_parent();
+    return preset != nullptr && preset->vendor != nullptr && preset->vendor->id == "Muon3D";
+}
+
 //------------------------------------------
 //          PhysicalPrinterDialog
 //------------------------------------------
@@ -253,7 +262,7 @@ void PhysicalPrinterDialog::build_printhost_settings(ConfigOptionsGroup* m_optgr
                 return;
             }
 
-            BonjourDialog dialog(this, Preset::printer_technology(*m_config));
+            BonjourDialog dialog(this, Preset::printer_technology(*m_config), is_muon_printer_preset(*m_presets));
             if (dialog.show_and_lookup()) {
                 m_optgroup->set_value("print_host", dialog.get_selected(), true);
                 m_optgroup->get_field("print_host")->field_changed();
