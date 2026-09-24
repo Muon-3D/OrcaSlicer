@@ -14722,6 +14722,25 @@ msgstr ""
 msgid "Network lookup"
 msgstr ""
 
+msgid "No printers found on this network."
+msgstr ""
+
+msgid "Look at the printer's screen:"
+msgstr ""
+
+msgid ""
+"A list of languages or a QR code — it's new. Scan the code with your phone "
+"to set it up, then search again."
+msgstr ""
+
+msgid ""
+"Its home screen — make sure this computer is on the same network, or type "
+"its address (Settings › Network on the printer)."
+msgstr ""
+
+msgid "Nothing — check that it's switched on."
+msgstr ""
+
 msgid "Address"
 msgstr ""
 
@@ -14732,6 +14751,27 @@ msgid "Service name"
 msgstr ""
 
 msgid "OctoPrint version"
+msgstr ""
+
+msgid "Search again"
+msgstr ""
+
+msgid "Needs setup"
+msgstr ""
+
+msgid "Ready"
+msgstr ""
+
+#, possible-boost-format
+msgid ""
+"%1% isn't set up yet. Finish setup on its screen, or open its setup page in "
+"your browser."
+msgstr ""
+
+msgid "Open setup page"
+msgstr ""
+
+msgid "Use it anyway"
 msgstr ""
 
 msgid "Searching for devices"
