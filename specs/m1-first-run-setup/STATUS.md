@@ -4,7 +4,7 @@ This page tracks the work packages in [10-work-plan.md](10-work-plan.md). The co
 
 Agents: the coordinator can't receive messages from you. Tell it where you are by pushing branches and opening PRs whose titles start with the package ID. Put questions in the PR body under **Spec questions**.
 
-**Last updated:** 24 Sep 2026, 16:40 UTC
+**Last updated:** 24 Sep 2026, 17:25 UTC. MR-1, OS-7 and ML-1 have no new commits since 16:36; their fixes are still pending.
 
 ## Packages with work
 
@@ -16,6 +16,8 @@ Agents: the coordinator can't receive messages from you. Tell it where you are b
 | MR-1 | Moonraker | branch `claude/m1-first-run-setup` @ `0c11719` (no PR yet) | **Changes needed** | A solid core. It passes request headers through for the CSRF and Host checks, floors `reset`, and has fakes and tests. It was written against an older spec, so it needs these changes: **(1)** marker calls become `GET /setup/complete`, and `POST /setup/complete {"by":"muon_setup"}` at `finish`; `reset` calls `DELETE /setup/complete`. **(2)** Add `/server/aux/setup/complete` to `FLOOR_PREFIXES`, with a test. **(3)** Region: `state.region` must be Aux `GET /region` passed through as-is, plus the derived `market`, and `options.region` must be `GET /region/options` as-is. Drop the `for_language`, `all`, `support_code` and `source` reshaping in `region.py`, and carry `network.region_confirmed` (02 §5.2, §5.6, §6). **(4)** Read the station count from `POST /wifi/ap/count` only; `/wifi/ap/stations` was dropped, and polling it would 404 every 2 s. |
 | OS-7 | MuonOS | branch `feat/KAN-413-setup-marker` @ `9bcb4cc` (no PR yet) | **Adopted as the marker contract** | `GET`, `POST` and `DELETE /setup/complete`, persisted by `muon3d-setup.toml`, with the ID-9 and data-inventory rows. The spec now follows it (03 §7). Still to add: `/server/aux/setup/complete` in `fluidd.nginx.template`'s 403 list and in `test_floor.py`, paired with MR-1's floor change. Coordinate with #174, whose own `setup_routes.py`/`setup.toml` under `/setup` would conflict. |
 | ML-1 | muon-link | branch `feat/ML-1-link-contract` @ `b9f9678`, stacked on #24 (no PR yet) | **Matches the spec** | `docs/ACCOUNT_LINK_ADMIN.md` and `tests/link_admin_contract.rs` pin the same `LinkPhase` shapes and 409s as 02 §5.9. |
+| OS-1 | MuonOS | branch `feat/KAN-410-captive-portal` @ `c3e06c5` (no PR yet) | **Changes needed** | Good: the dnsmasq wildcard drop-in, the nginx maps, `/setup` → `/#/setup`, the `tcp/443` reset on `ap0`, and tests. Missing from the spec: **(1)** D11 forwarding isolation. `10-ap-isolate` must reject **all** forwarding from `ap0`, including to `eth0` subnets, and run on `eth0` events. Today hotspot clients are NATed out and can reach an Ethernet LAN. The new dnsmasq comment claims "the hotspot never routes anywhere", which isn't true until this lands. **(2)** Pin `ipv4.addresses=10.42.0.1/24` in `ap0-con`, with the persisted-profile migration. Both the nginx map and the QR codes depend on that address. |
+| FL-7 | Fluidd | branch `fix/KAN-408-app-host-self-probe` @ `d6d7970` (no PR yet) | **Matches the spec** | Adds `app.muon3d.com` to both blacklists. It also returns an empty `ApiConfig` at once when no endpoint is left, which removes the leftover 5 s sleep. Tests added. |
 
 ## In-flight work that overlaps the spec
 
@@ -50,4 +52,4 @@ Build on these PRs rather than around them.
 
 ## Not started yet
 
-No branches seen yet for MR-2–MR-5, MR-7–MR-9, OS-1–OS-6, OS-8–OS-11, UI-*, FL-*, CON-1, or QA-*. **OS-11 (Wi-Fi passwords in the journal) is urgent and still unassigned.**
+No branches seen yet for MR-2–MR-5, MR-7–MR-9, OS-2–OS-6, OS-8–OS-11, UI-*, FL-1–FL-6, FL-8, FL-9, CON-1, or QA-*. **OS-11 (Wi-Fi passwords in the journal) is urgent and still unassigned.**
