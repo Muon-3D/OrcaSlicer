@@ -164,7 +164,7 @@ This screen follows KAN-321 Rev 11. The region is confirmed as a line at the mom
   |---|---|---|
   | **Keep it on my network** | "Walnut never contacts Muon. You print from this network." | **Focused by default** (Tier 1) |
   | **Link a Muon account** | "Print and watch from anywhere. Muon never sees your files." | |
-  | **My own server** | "Use your organisation's server." Only if `capabilities.self_hosted`. On the panel it shows the URL of the Fluidd page where the owner enters the server address. | |
+  | **My own server** | Not offered in phase 1: `capabilities.self_hosted` is `false` ([02-setup-api.md §5.9](02-setup-api.md#59-remote-access)). | |
 
 - **Link a Muon account** posts `remote {mode: cloud}` and goes to P12.
 - **Unavailable:** if `network.internet` isn't `true` or the clock isn't synced, *Link a Muon account* is disabled with "Needs internet", and pressing it explains why.
@@ -172,15 +172,19 @@ This screen follows KAN-321 Rev 11. The region is confirmed as a line at the mom
 
 ### P12 · Link code (H)
 
-This is the MuonUI pairing screen that KAN-190 still lacks.
+This is the account-link screen (NET-10(d), ADR 0018, muon-link#24). MuonUI doesn't have one yet. The screen renders `remote.link`, muon-link's `LinkPhase` ([02-setup-api.md §5.9](02-setup-api.md#59-remote-access)).
 
-- **Content:**
-  - The code in large mono digits, grouped 3+3 (`482 913`).
-  - The link QR (§5).
+- **`connecting`:** "Getting a code…" with a spinner.
+- **`code`:**
+  - The code in large mono digits, grouped in threes (`482 913`). Its length is the orchestrator's choice, so handle any length.
+  - A QR code encoding `remote.link.url`, as given.
   - "Scan, or enter it at / **app.muon3d.com**".
-- **Countdown.** The ring counts down the code's 120 s TTL. `muon_setup` renews it automatically while this screen is open ([02-setup-api.md §5.9](02-setup-api.md#59-remote-access)).
-- **After the claim** (`phase: offer`), the confirm screen shows: "Link Walnut to / **jed@example.com**?" with **Confirm** and **Cancel**. Focus starts on **Cancel**, so a stray press can't link. Turning to Confirm and pressing links the printer. This is the owner's physical-presence proof ([07-security.md](07-security.md)).
-- **Linked:** "Linked to jed@example.com", then continue.
+  - The ring counts down to `expires_at`. `muon_setup` renews the code automatically after that.
+- **`offer`:** the confirm screen reads "Link Walnut to / **jed@example.com**?", with the authority key's short form (`fingerprint`, shown as `9f3c 1a7b e2d0 4c11`) under it. LINK-3 makes the key what is being confirmed; the account name is a label.
+  - The buttons are **Confirm** and **Cancel**, with focus starting on **Cancel** so a stray press can't link.
+  - **Confirm** calls muon-link's `POST /link/confirm` **directly**, at `/muon-link/link/confirm` through the `:100` vhost (OS-10). **Cancel** calls `/muon-link/link/cancel`. Neither goes through Moonraker.
+- **`linked`:** "Linked to jed@example.com", then continue.
+- **`failed`:** the `link_failed` error screen, with `message`.
 - **Back:** press and hold asks "Stop linking?" and then calls `remote/cancel`.
 
 ### P13 · Ready to print (I)
@@ -213,7 +217,7 @@ Add these, or extend the existing ones:
 | Entry | What |
 |---|---|
 | **Add a phone or computer** | The P2 screen outside setup. It brings the hotspot up if it's down (AP-5) and shows the Wi-Fi QR code, the details and the URL QR code. This builds the missing AP-3 QR. |
-| **Link to account** | P11 → P12 outside setup. The app fallback copy tells owners to use it: "Press the knob, then open Settings › Link to account." |
+| **Link to account** | Shows the link state at all times, including "Not linked" (LINK-8). Unlinked: P12 outside setup (the app fallback copy tells owners to use it: "Press the knob, then open Settings › Link to account."). Linked: the account, the key's short form, and **Unlink**, which calls `/muon-link/link/unlink` after a confirmation. |
 | **Region** | The existing MuonUI#31 region screen, unchanged. It calls Aux `/region/*` directly, because the region is a device setting, not a setup step. After an apply, `muon_setup` sees the change the next time it reads `GET /region`. |
 | **Wi-Fi** | The existing `WifiManagerView.vue`. Choosing a network while setup is complete also goes through `muon_setup` (`network`), so the phone page and the panel stay in step. |
 
@@ -245,7 +249,7 @@ Add these, or extend the existing ones:
 |---|---|---|
 | Wi-Fi join (P2) | `WIFI:T:WPA;S:<ssid>;P:<psk>;;` | Escape `\`, `;`, `,`, `:` and `"` in the SSID and PSK with a backslash. Always `T:WPA`, never `nopass`; unlike the Fluidd card bug, the panel has the real key. |
 | Setup page (P2, "Use your phone") | `http://10.42.0.1/setup` | nginx redirects it to `/#/setup`. |
-| Link (P12) | `https://app.muon3d.com/link?code=<6 digits>` | Opens Fluidd's existing `LinkLanding` route. |
+| Link (P12) | `remote.link.url`, exactly as muon-link returns it | The orchestrator sets the URL. Today that is app.muon3d.com's `/link?code=` landing page. |
 | Printer address (P14) | `http://<ipv4>/` | Use the IP, not `.local`, because Android can't always resolve mDNS. |
 
 **Where the panel gets the Wi-Fi key.** `muon_setup` never puts the hotspot key in its state. The panel reads it through the same panel-only path the HOTSPOT card uses today (KAN-346). If that path is an Aux route, it must stay loopback-only, and it must be added to `muon_floor.FLOOR_PREFIXES` if it goes through Moonraker.

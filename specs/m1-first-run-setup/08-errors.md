@@ -44,9 +44,9 @@ Every error screen has **one primary action**. On the panel that is the press; o
 |---|---|---|---|
 | `update_failed` | Rolled back after the reboot | "The update didn't finish. {name} is still on {version}." | Continue |
 | `printer_busy` | A print is running | "{name} is printing. Try again when it finishes." | OK |
-| `link_unavailable` | muon-link isn't reachable | "Linking isn't available right now." | Keep it on my network / Try again |
+| `link_unavailable` | muon-link isn't answering (a 503 from `muon_link`), or no orchestrator is configured (`phase: unavailable`) | "Linking isn't available right now." | Keep it on my network / Try again |
 | `link_failed` | muon-link reports `failed` | "Linking didn't work." plus `detail.message` if present | Try again / Keep it on my network |
-| `link_expired` | The code expired and wasn't renewed, e.g. because the owner left the screen | "That code has expired." | Show a new code |
+| `link_expired` | The code passed `expires_at` and wasn't renewed, e.g. because the owner left the screen | "That code has expired." | Show a new code |
 | `link_declined` *(cloud side)* | Cancel was chosen at the knob | "Linking was cancelled on the printer." | Try again / Keep it on my network |
 
 ## 4. Ready to print

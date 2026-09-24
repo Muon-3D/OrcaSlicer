@@ -24,7 +24,7 @@ Steps always run in this order. The panel's progress ring and the phone's "n of 
 | 2 | `network` | No | Yes | Never | Wi-Fi is joined and has an IPv4 address, with the region declared (§2.1). Or: Ethernet has an address and the owner accepts it. Internet access is **not** required. | The printer stays offline, and the hotspot stays on as the way in. A "Finish setup" card appears. |
 | 3 | `name` | No | "Keep" counts as done | Never | Keep or Rename | – (it can't end up skipped) |
 | 4 | `update` | No | Yes ("Later") | When this step becomes current: no internet, no update available, or the clock not synced (KAN-270) | The update is installed and the printer has rebooted into it | No card appears. The normal update notice covers it. |
-| 5 | `remote` | No | Yes ("Do this later") | Never | One of: `local` chosen; `cloud` chosen and the link confirmed on the knob; `self_hosted` chosen and the orchestrator answers | Behaves as `local`. A "Link a Muon account" card appears. |
+| 5 | `remote` | No | Yes ("Do this later") | Never | One of: `local` chosen; or `cloud` chosen and the link confirmed on the panel (muon-link phase `linked`). `self_hosted` isn't offered in phase 1. | Behaves as `local`. A "Link a Muon account" card appears. |
 | 6 | `ready` | No | Yes | Never | Every required item in the ready manifest is done ([04-panel.md §P13](04-panel.md#p13--ready-to-print-i)) | A "Before your first print" card appears. |
 | – | *finish* | – | – | – | – | `finish` marks setup `complete`. This is the "Done" screen, not a step. |
 

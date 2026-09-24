@@ -189,18 +189,35 @@ server {
 
 `GET /wifi/uplink` (W5) covers `eth0`. If Ethernet has an address when `network` becomes current, `muon_setup` offers "Connected by cable". No Aux change is needed beyond W5.
 
-## 6. Link service contract
+## 6. Account link (muon-link)
 
-**muon-link exists** (muon-link#14, `86809b3`). Its admin endpoint `127.0.0.1:7131` serves `/pairing/open`, `/pairing/confirm` and `/pairing/cancel` (KAN-190).
+The account link is **muon-link PR #24** ([Muon-3D/muon-link#24](https://github.com/Muon-3D/muon-link/pull/24), open, `c1f5b2c`; NET-10(d), ADR 0018). It isn't KAN-190's `/pairing/*`, which is **client pairing**: pinning a LAN client's key, with an 8-digit code, SAS comparison and burn limits. Setup phase 1 doesn't use client pairing.
 
-**What the setup flow needs.** Confirm each item in muon-link, and add what's missing:
+**Admin routes on `127.0.0.1:7131`** (PR #24):
 
-1. **Open** returns a 6-digit code with a 120 s TTL. The code is single-use and allows 3 attempts before a knob press re-arms it (KAN-190).
-2. **Status** can be read, with the phases `unlinked`, `code`, `offer`, `linked` and `failed`. In `offer` it includes the claimant's display label (account email or name), which the panel shows at the confirm. If there's no status route, add `GET /pairing/status`.
-3. **Confirm** is accepted only from Moonraker's `muon_link` component, which is itself panel-only and floored ([02-setup-api.md §9](02-setup-api.md#9-link-endpoints-fluidd-already-calls-new-component-muon_link)).
-4. **Cancel** closes the window and invalidates the code.
+| Route | Caller | Does |
+|---|---|---|
+| `GET /link` | Moonraker `muon_link`; panel | The current `LinkPhase` ([02-setup-api.md §5.9](02-setup-api.md#59-remote-access)) |
+| `POST /link/start` | Moonraker `muon_link` | Dials the orchestrator and sends `LinkStart`, which moves the phase to `connecting`. The orchestrator replies with `LinkCode`, which moves it to `code`. |
+| `POST /link/confirm` | **Panel only** (MuonUI, directly) | Accepts the pending offer. It writes `link.json` and moves the phase to `linked`. |
+| `POST /link/cancel` | Moonraker `muon_link`; panel | Declines a pending offer and drops the connection |
+| `POST /link/unlink` | **Panel only** | Removes the link and every grant (LINK-8) |
 
-The console side (`/v1/links/claim`, `/v1/links/:id`) is unchanged, except for CON-1 ([10-work-plan.md](10-work-plan.md)).
+Errors are `409 {"error": "<sentence>"}`. muon-link pushes no events, so callers poll.
+
+**OS-10 (new).** The MuonOS side, which PR #24 lists under "Not in this PR":
+
+1. Add an nginx `location /muon-link/ { proxy_pass http://127.0.0.1:7131/; }` to the **`:100` MuonUI vhost only** (loopback). It must never go on `:80`.
+2. Set `MUON_LINK_ORCH_ID` and `MUON_LINK_RELAY_URL` in the muon-link unit, and `MUON_LINK_ORCH_ADDR` if it's needed. Without them `GET /link` answers `unavailable`.
+3. **Never set `MUON_LINK_DISCOVERABLE=1`.** It keeps an unlinked printer connected to the orchestrator, which breaks the Tier 1 promise (NET-2).
+
+**Open questions for the connectivity owner.** These aren't decided by this spec.
+
+- **LINK-2 conflicts with PR #24.** MuonOS `docs/connectivity/SPEC.md` LINK-2 says the **printer** mints an 8-character Crockford code and enforces its lifetime and a 3-attempt cap. PR #24 has the **orchestrator** mint a digits-only code, and muon-link enforces nothing. The code's length, TTL and attempt limits then live in muon-console (muon-link-cloud), which this spec hasn't reviewed.
+- **LINK-4 can't be built with PR #24.** LINK-4 wants the code made before the hotspot handoff and carried in the URL. With orchestrator-made codes, no code exists without internet. This spec only offers linking once the printer has internet.
+- **`/link/confirm` has no proof of a knob press.** Any loopback process can confirm a pending offer. See [07-security.md](07-security.md) S3 and ML-2.
+
+The console side is `/v1/links/claim` and `/v1/links/:id`, which Fluidd calls. It relays to the printer over `muon/orch/1` (`LinkStart`, `LinkCode`, `LinkOffer`, `LinkDecision`). It is unchanged except for CON-1.
 
 ## 7. Completion marker and factory reset
 

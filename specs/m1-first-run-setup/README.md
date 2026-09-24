@@ -100,7 +100,7 @@ This folder specifies how a new Muon3D M1 gets from the box to its first print. 
 
 Not every repo was reviewed for this spec. Moonraker, Fluidd and OrcaSlicer were read directly, and Jira was read in full. MuonOS, MuonUI, muon-link and the console were known only through Jira and the code that calls them. Anything below that doesn't match reality is a spec bug. Fix the spec in the same PR series.
 
-1. **muon-link `/pairing/*` payloads.** They aren't specified anywhere (03 §6, ML-1).
+1. **The account link.** It's muon-link PR #24 (`/link/*`), not `/pairing/*`. Still open: the LINK-2 code-minting conflict, the code limits in muon-console, and proof of a knob press on `/link/confirm` (03 §6, ML-2).
 2. **Aux `/region/*` request and response shapes.** They are "built" but undocumented, so map them to the fields in 03 §3 (OS-2).
 3. **MuonUI structure.** The router, the store pattern, the MuonUI#31 setup route, and how the HOTSPOT card reads the key (04 §1, §5).
 4. **The internet-check endpoint on the OTA host.** It must be recorded in the privacy inventory (03 §4).

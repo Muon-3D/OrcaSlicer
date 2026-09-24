@@ -1,6 +1,6 @@
 # 07 · Security and privacy
 
-Setup runs before the owner has an identity on the printer, so the trust anchor is **physical presence**. Two things are shown only on the panel: the hotspot key, and the link code with its knob confirmation. Everything below follows from that.
+Setup runs before the owner has an identity on the printer, so the trust anchor is **physical presence**. Two things happen only at the panel: the hotspot key is shown there, and linking an account is confirmed there with the knob. Everything below follows from that.
 
 This builds on what ships today:
 
@@ -16,8 +16,8 @@ This builds on what ships today:
 |---|---|---|
 | S1 | The hotspot key and the Wi-Fi join QR appear **only on the panel**. `muon_setup` state, events and logs never contain them. `GET /wifi/ap/show` keeps returning `security_enabled` and never the key (KAN-376). | MuonUI; `muon_setup` tests |
 | S2 | Wi-Fi passwords and Enterprise passwords are sent once, straight to Aux. They are never stored by `muon_setup`, never echoed in a response, a state or an event, and never logged at any level by Moonraker, Aux or `nmcli_gate.py`. Only NetworkManager's root-only keyfiles hold them. | `muon_setup` + Aux W2 tests |
-| S3 | Linking needs a **knob press** on the panel at the offer. `POST /server/muon/link/confirm` is panel-only and floored. When Aux's `KnobConfirmationBackend` works, route the confirmation through it, so a loopback caller that isn't the knob can't confirm. | `muon_link`, floor, Aux |
-| S4 | Link codes are 6 digits, live 120 s, are single-use, and allow 3 attempts before the panel must re-arm (KAN-190). `link/start` is rate-limited to 5 per minute per caller IP. | muon-link, `muon_link` |
+| S3 | Linking is confirmed **only at the panel**. MuonUI calls muon-link's `/link/confirm` directly, through the loopback-only `:100` vhost. Moonraker never forwards confirm or unlink, and PR #20's tests assert it. The panel shows the authority key's short form (LINK-3). **Gap:** muon-link accepts `/link/confirm` from any loopback process, with no proof of a knob press. ML-2 adds one. | MuonUI, muon-link, Moonraker PR #20 |
+| S4 | The orchestrator makes link codes, and muon-link enforces no lifetime or attempt cap (PR #24). The limits must be confirmed in muon-console, and the conflict with LINK-2 (printer-made code, 3 attempts) resolved ([03-printer-os.md §6](03-printer-os.md#6-account-link-muon-link)). Moonraker's `link/start` is limited to 5 per minute per caller IP (MR-6). MuonOS must never set `MUON_LINK_DISCOVERABLE=1`. | muon-console, muon-link, `muon_link`, MuonOS |
 | S5 | Remote callers (the Iroh gateway) can read setup state but can't write to it. Setup is local-only. | `muon_setup` caller check |
 | S6 | Setup HTTP writes need `Content-Type: application/json`, a `Host` that is one of the printer's names or addresses, and, if an `Origin` is present, a matching one. This blocks form-based CSRF and DNS rebinding from websites visited on the owner's LAN. | `muon_setup` §3 |
 | S7 | Hotspot clients never get routed anywhere: no LAN, no internet. The captive DNS answers everything with `10.42.0.1`, and nothing is forwarded. Confirm AP-7 on hardware (it's fixed in code, not yet verified on a unit). | `10-ap-isolate`, dnsmasq drop-in |

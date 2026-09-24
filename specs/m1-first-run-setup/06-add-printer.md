@@ -85,7 +85,7 @@ The fixes themselves are in [10-work-plan.md](10-work-plan.md).
   - The console API must then accept CORS from any origin for `/v1/*`, with bearer-token auth and no cookies (CON-1).
 - **The link endpoints Fluidd already calls.**
   - These are `GET /server/muon/link` and `POST /server/muon/link/start`.
-  - They don't exist in the Moonraker fork yet. MR-6 adds them ([03-printer-os.md §6](03-printer-os.md#6-link-service-contract)).
+  - [Muon-3D/Moonraker#20](https://github.com/Muon-3D/Moonraker/pull/20) (open) serves them. `start` returns `connecting` at once, and `startLanLink()` already polls until `code` ([03-printer-os.md §6](03-printer-os.md#6-account-link-muon-link)).
 
 ### 2.6 Tests
 

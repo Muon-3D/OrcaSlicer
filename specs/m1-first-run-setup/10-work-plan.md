@@ -7,7 +7,7 @@ These work packages are sized for one agent or one PR each. Every package names 
 1. **Read first.** Read [README.md](README.md), then the files for your repo. The contract in 02, and the error codes in 08, are authoritative across repos.
 2. **Match the repo.** Follow its conventions (lint, tests, style). Each file lists them for its repo.
 3. **Don't invent external payloads.** Two interfaces are known by name only:
-   - muon-link's `/pairing/*`;
+   - muon-link's `/link/*` (PR #24; `/pairing/*` is client pairing and is not used here);
    - the exact shapes of Aux's `/region/*`.
    Read their source. If a field you need isn't there, add it in that repo (it's listed as a package here) or stop and ask. Never guess a shape and hard-code it.
 4. **No secrets anywhere.** Passwords and the hotspot key never appear in logs, state, events, fixtures or test snapshots.
@@ -25,8 +25,8 @@ These work packages are sized for one agent or one PR each. Every package names 
 | MR-2 | Language (including Fluidd's default locale), clock, time zone, name (refactor `aux_api_proxy` to expose `set_friendly_name` and `get_identity`), and the tzdata lookup for options | MR-1; OS-6 for real clock and time-zone writes | Unit tests for each; the identity endpoint behaves as before |
 | MR-3 | Networks and join: normalising the scan, the region suggestion, the join orchestration (region apply → join → phases), mapping failures, cancel, CA upload, Ethernet, the internet result, and computing update visibility | MR-1; OS-2, OS-3 and OS-4 for the real Aux (fakes until then) | 02 §8 tests 5, 6, 9 and 10 pass |
 | MR-4 | The update step through `update_manager`, including the version check after reboot | MR-1 | Test 11 passes |
-| MR-5 | The remote step: `local`, `cloud` (with code renewal), `self_hosted` behind a capability flag, and `later` | MR-1, MR-6 | Test 12 passes |
-| MR-6 | The `muon_link` component: `GET /server/muon/link`, `POST …/link/start`, `…/confirm` (panel-only and floored) and `…/cancel`, bridging to `127.0.0.1:7131`, plus the `muon_link:link_changed` event | ML-1 | `tests/test_muon_link.py` passes; Fluidd's `startLanLink()` works against a dev unit |
+| MR-5 | The remote step: `local`, `cloud` (mirroring `LinkPhase`, renewing past `expires_at`, never during `offer`), and `later`. `self_hosted` isn't offered in phase 1. | MR-1, MR-6 | Test 12 passes |
+| MR-6 | `muon_link`: build on [Muon-3D/Moonraker#20](https://github.com/Muon-3D/Moonraker/pull/20), which already has `GET /server/muon/link`, `POST …/start` and `POST …/cancel`. Add: polling `GET /link` with the `muon_link:link_changed` event, public `status()`/`start()`/`cancel()`, and a limit of 5 `start` calls per minute per IP. **Never add confirm or unlink.** | PR #20 merged (or stacked on it); ML-1 | `tests/test_muon_link.py` extended and passing; Fluidd's `startLanLink()` works against a dev unit |
 | MR-7 | The ready step: the manifest (loaded from a file, with a default and a schema check), confirm, macro start through `klippy_apis`, hiding undefined macros, and the busy and not-ready guards | MR-1 | Unit tests pass |
 | MR-8 | Zeroconf: the `_octoprint._tcp` record advertises **port 80** (nginx), and TXT gains `name=<display>` and `setup=<state>`; the record is re-registered when either changes. Coordinate with KAN-364's NET-3 record so it also carries `setup`. | MR-1 | OrcaSlicer's Bonjour dialog lists a dev unit, and `dns-sd -L` shows port 80 and the TXT keys |
 | MR-9 | `aux_api_proxy`: register the identity endpoints in `__init__` (503 while Aux is down), add `setup` to `/server/muon/identity`, and fix `tests/test_aux_api_proxy.py`, whose `FakeServer` has no `database` (42 of 44 tests fail today) | MR-1 | That test file is green |
@@ -44,12 +44,14 @@ These work packages are sized for one agent or one PR each. Every package names 
 | OS-7 | The setup marker: `GET/POST/DELETE /setup/complete`, the persist declaration, the ID-9 inventory, and floor entries | – | The marker survives an OTA update; KAN-351's human check shows it cleared by reset |
 | OS-8 | Ship `/usr/share/muon/setup/ready.json`, with the hardware team, and the `MUON_SELF_TEST` macro if they want one | Hardware team decision | The manifest validates |
 | OS-9 | Pin the new MuonUI and Fluidd builds in the image, updating the Fluidd zip checksum guard (it blocked the KAN-321 C3 run) | The UI and FL packages | The image builds and boots to setup on a clean flash |
+| OS-10 | muon-link wiring for the account link: an nginx `location /muon-link/` on the **`:100` vhost only**, `MUON_LINK_ORCH_ID` and `MUON_LINK_RELAY_URL` in the muon-link unit, and **never** `MUON_LINK_DISCOVERABLE=1` (03 §6) | ML-1 | The panel can read `/muon-link/link`; `:80` can't reach it |
 
 ### muon-link
 
 | ID | Package | Depends on | Done when |
 |---|---|---|---|
-| ML-1 | Confirm or add the pairing contract in 03 §6: a status route, the claimant's label at `offer`, 6 digits, a 120 s TTL, single use, and 3 attempts | – | A contract test against the admin endpoint |
+| ML-1 | Land [Muon-3D/muon-link#24](https://github.com/Muon-3D/muon-link/pull/24) (the account link, `/link/*`), keeping the `LinkPhase` shapes in 02 §5.9 | – | PR merged; contract test against `GET /link` |
+| ML-2 | **Security:** proof of a knob press on `POST /link/confirm` (and `/link/unlink`). Today any loopback process can confirm. Use the same mechanism as Aux's `KnobConfirmationBackend` (`dev_mode_consent.py`), or a one-time nonce that MuonUI gets from sk_daemon on a press. | ML-1 | A loopback `curl` can't confirm without a press |
 
 ### MuonUI (`Muon-3D/MuonUI`)
 
@@ -57,7 +59,7 @@ These work packages are sized for one agent or one PR each. Every package names 
 |---|---|---|---|
 | UI-1 | The setup shell: client, store, router guard, `screenFor`, `RingProgress`; P1 Language, P2 Here or phone (with `SetupQr` and the network-details view) and P8 Following | MR-1 (fixtures until then) | 04 §7 tests for these screens pass; boots into P1 on a clean unit |
 | UI-2 | Network: P4 list, P5 `RingKeyboard`, P5b region line and picker, P6 Joining, P7 Connected and errors, P7b Time zone | UI-1, MR-3 | Tests pass; R1 and R2 pass on the bench |
-| UI-3 | P9 Name, P10 Update, P11 Remote, P12 Link code and the knob confirm (the KAN-190 panel half) | UI-1, MR-4, MR-5 | R13 passes |
+| UI-3 | P9 Name, P10 Update, P11 Remote, P12 Link code and the confirm through muon-link directly (NET-10(d)) | UI-1, MR-4, MR-5, OS-10 | R13 passes |
 | UI-4 | P13 Ready, P14 Done, the home "Finish setup" card, and the Settings entries "Add a phone or computer" (the AP-3 QR) and "Link to account" | UI-1, MR-7 | Tests pass |
 | UI-5 | Setup strings translated into de, fr, es and it | UI-1–UI-4 | No missing keys (a CI check) |
 
@@ -128,7 +130,7 @@ Then         QA-2 → phase 1 done
 | Jira | Relationship to this spec |
 |---|---|
 | KAN-203 First-run setup flow | **The umbrella.** MR-1–MR-7, UI-1–UI-5, FL-1, FL-3 and FL-5. The completion marker is OS-7. |
-| KAN-190 Pairing | The panel half is UI-3 (P12, the missing MuonUI pairing screen); MR-6 and ML-1 |
+| KAN-190 Pairing | **Client** pairing (`/pairing/*`) isn't used by setup phase 1. The account link is NET-10(d) and ADR 0018: muon-link#24 (ML-1), Moonraker#20 (MR-6), the panel's link screen (UI-3, P12) and OS-10. |
 | KAN-324 Language and country | **Rescope** to Rev 11: the country is confirmed at join (UI-2 P5b, FL-3 §3.1, OS-2), not asked as its own step |
 | KAN-311 Wi-Fi onboarding is panel-only | **Close as superseded.** KAN-350 made the hotspot trusted, and the hotspot plus a phone is now the primary path |
 | KAN-346 / AP-3 | The hotspot QR code: UI-1 P2 and UI-4 "Add a phone or computer" |

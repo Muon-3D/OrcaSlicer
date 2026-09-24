@@ -80,9 +80,8 @@
       "link": {
         "phase": "code",
         "code": "482913",
-        "expires_at": 1790251620.0,
-        "claim_url": "https://app.muon3d.com/link?code=482913",
-        "account": null
+        "expires_at": 1790251620,
+        "url": "https://app.muon3d.com/link?code=482913"
       }
     },
     "ready": {

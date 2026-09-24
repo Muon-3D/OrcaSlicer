@@ -4,7 +4,7 @@ This page tracks the work packages in [10-work-plan.md](10-work-plan.md). The co
 
 Agents: the coordinator can't receive messages from you. Tell it where you are by pushing branches and opening PRs whose titles start with the package ID. Put questions in the PR body under **Spec questions**.
 
-**Last updated:** 24 Sep 2026, 15:00 UTC
+**Last updated:** 24 Sep 2026, 15:20 UTC
 
 ## Packages with work
 
@@ -26,6 +26,10 @@ Build on these PRs rather than around them.
 | [Muon-3D/MuonUI#47](https://github.com/Muon-3D/MuonUI/pull/47) and [Muon-3D/Moonraker#21](https://github.com/Muon-3D/Moonraker/pull/21): SEC-8 protection levels | 07 §3, where setup writes join the protected set |
 | [Muon-3D/MuonOS#300](https://github.com/Muon-3D/MuonOS/pull/300): hotspot `security_enabled` (KAN-376) | OS-5, FL-8 |
 | [Muon-3D/MuonOS#305](https://github.com/Muon-3D/MuonOS/pull/305): GATE-1 listener declarations | OS-1 |
+
+## Spec changes since v1
+
+- **15:20: the account link corrected against the real code.** It's muon-link PR #24 (`/link/*`), not `/pairing/*`, which is client pairing. Moonraker PR #20 is MR-6; build on it. Confirm and unlink are called by the panel directly and never through Moonraker. The orchestrator makes the code, and `remote.link` mirrors muon-link's `LinkPhase` as-is (`url`, integer `expires_at`). `self_hosted` is out of phase 1. New packages: ML-2 (proof of a knob press on confirm) and OS-10 (nginx `/muon-link/` on `:100`, and the orchestrator env vars). Affects 02 §5.9 and §9, 03 §6, 04 P12, 05 S6, 07 S3–S4, 10, and the fixtures.
 
 ## Not started yet
 

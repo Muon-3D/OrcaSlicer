@@ -280,30 +280,46 @@ Query `country` (optional) adds that country's time zones. Query `language` (opt
 `POST /server/muon/setup/remote`
 
 ```jsonc
-{ "rev": 11, "mode": "local" }                       // done at once; no outbound connection is made
-{ "rev": 11, "mode": "cloud" }                       // starts the link flow
-{ "rev": 11, "mode": "self_hosted", "url": "https://orch.example.org" }   // only if capabilities.self_hosted
-{ "rev": 11, "mode": "later" }                       // skipped; the Finish setup card appears
+{ "rev": 11, "mode": "local" }    // done at once; no outbound connection is made
+{ "rev": 11, "mode": "cloud" }    // starts the account link
+{ "rev": 11, "mode": "later" }    // skipped; the Finish setup card appears
 ```
 
-**`cloud`** runs the link flow:
+**`self_hosted` isn't accepted in phase 1.** muon-link configures an orchestrator only through environment variables and a restart: `MUON_LINK_ORCH_ID` and `MUON_LINK_RELAY_URL`, optionally `MUON_LINK_ORCH_ADDR`. No route can set them at runtime, and the self-hosted orchestrator in the muon-link repo doesn't speak `muon/orch/1` yet. `capabilities.self_hosted` therefore stays `false`, and the surfaces don't offer "My own server".
 
-1. It calls the link service's start. This is the backend behind `POST /server/muon/link/start` / `GET /server/muon/link`, whose phases Fluidd already expects: `unavailable | unlinked | connecting | code | offer | linked | failed`. See [03-printer-os.md §6](03-printer-os.md#6-link-service-contract).
-2. It mirrors that service into the state:
+**`cloud` runs the account link** (NET-10(d), ADR 0018, muon-link#24) through the `muon_link` component (§9):
 
-   ```json
-   { "phase": "code", "code": "482913", "expires_at": 1790251390.0,
-     "claim_url": "https://app.muon3d.com/link?code=482913", "account": null }
+1. **Start.** Call `muon_link.start()`, which forwards to muon-link's `POST /link/start`. It returns `{"phase":"connecting"}` at once. The code arrives later, from the orchestrator, not from muon-link.
+2. **Mirror.** Copy `muon_link`'s phase object into `remote.link` **unchanged** on every `muon_link:link_changed` event. The shapes are muon-link's `LinkPhase`:
+
+   ```jsonc
+   {"phase":"unavailable"}                                        // no orchestrator configured
+   {"phase":"unlinked"}
+   {"phase":"connecting"}
+   {"phase":"code","code":"482913","expires_at":1790251620,"url":"https://app.muon3d.com/link?code=482913"}
+   {"phase":"offer","account":"jed@example.com","authority":"Muon3D","fingerprint":"9f3c1a7be2d04c11"}
+   {"phase":"linked","account":"jed@example.com","connected":true}
+   {"phase":"failed","message":"could not reach the Muon3D service: …"}
    ```
 
-3. **Code renewal.** While `cursor == "remote"`, the mode is `cloud` and the phase is `code`, `muon_setup` starts a new code whenever the old one expires. A code lives 120 s (KAN-190).
-4. **Linked.** When the phase reaches `linked`, which happens after the claim and the knob confirmation in the existing flow, the step is `done`, with `account` set to the account's display email or name.
-5. **Failure.** `unavailable` or `failed` gives `error.code = "link_unavailable"` or `"link_failed"`. The step stays `pending`, so the owner can pick another option.
-6. **Blocked.** If the clock isn't synced, or `network.internet` isn't `true`, `cloud` returns `ok: false` with `clock_unsynced` or `no_internet`.
+   - `expires_at` is an integer in Unix seconds.
+   - `url` is the QR content. The orchestrator sets it; the surfaces don't build it.
+   - The code's length is the orchestrator's choice. It is digits only.
+3. **Code renewal.** muon-link never expires a code itself.
+   - While `cursor == "remote"`, the mode is `cloud` and the phase is `code`, `muon_setup` calls `start()` again once the synced clock passes `expires_at`.
+   - It also retries once on `failed`.
+   - It **never** calls `start()` during `offer`, because that silently drops the pending offer.
+4. **Linked.** The phase becomes `linked` the moment the owner confirms on the panel. The panel calls muon-link directly (§9); Moonraker never forwards confirm. The step is then `done`, with `account = linked.account`. `connected` may briefly be `false`, and grants only work once signed time arrives. The surfaces don't wait for it.
+5. **Already linked.** If `start()` returns 409 "already linked", read `GET /link` and treat the step as `done` with that account.
+6. **Failure.**
+   - A 503 from `muon_link` (muon-link isn't answering) or `phase: "unavailable"` gives `link_unavailable`.
+   - `phase: "failed"` after the one retry gives `link_failed`, with `detail.message`.
+   - In both cases the step stays `pending`.
+7. **Blocked.** If the clock isn't synced, or `network.internet` isn't `true`, `cloud` returns `ok: false` with `clock_unsynced` or `no_internet`. The orchestrator makes the code, so no code can be issued on the hotspot alone.
 
-`POST /server/muon/setup/remote/cancel` with `{}`: stops code renewal. The link service's pending code is cancelled.
+`POST /server/muon/setup/remote/cancel` with `{}`: stops renewal and calls `muon_link.cancel()`, which forwards to `/link/cancel`. That declines a pending offer and drops the orchestrator connection. It does nothing once the printer is linked.
 
-`capabilities.cloud_link` is `false` when the link service isn't installed. `capabilities.self_hosted` is `false` until the Tier 3 orchestrator configuration exists. Surfaces hide options whose capability is `false`.
+`capabilities.cloud_link` comes from `GET /server/muon/link`: it's `false` on a 503 or on `phase: "unavailable"`. Don't use muon-link's `/status.orchestrator_configured`, which only reflects the legacy `MUON_LINK_ORCHESTRATOR_URL`.
 
 ### 5.10 Ready to print
 
@@ -428,20 +444,29 @@ Add `tests/test_muon_setup.py` with fakes for `database`, `aux_api_proxy`, `klip
    - `region` is required only in `picker` markets with nothing declared yet.
 10. Markets: a `locked` market needs no `region` in the join, and `none` passes through `needs_reregistration`. Neither blocks a join on a permitted channel.
 11. The update step: a version that matches the target after the reboot is `done`, and a rollback gives `update_failed`.
-12. Remote `cloud`: codes renew while the cursor is on `remote`, and they stop after `goto` away or `remote/cancel`.
+12. Remote `cloud`:
+    - codes renew once the clock passes `expires_at`, and stop after `goto` away or `remote/cancel`;
+    - `start()` is never called during `offer`;
+    - a 503 or `unavailable` gives `link_unavailable`;
+    - a 409 "already linked" gives `done`.
 13. `aux_unavailable`: the component loads and every Aux-backed call returns the code. The GET still works.
 
-## 9. Link endpoints Fluidd already calls (new component `muon_link`)
+## 9. The `muon_link` component (Moonraker PR #20)
 
-Fluidd's `discovery.ts` and `LinkPrinterDialog.vue` already call `GET /server/muon/link` and `POST /server/muon/link/start`, but nothing in the Moonraker fork serves them. Add them in a small component, `moonraker/components/muon_link.py` with a `[muon_link]` section, which bridges to muon-link's admin endpoint on `127.0.0.1:7131` (KAN-190, muon-link#14). `muon_setup` uses its Python methods; it doesn't make HTTP calls to itself.
+[Muon-3D/Moonraker#20](https://github.com/Muon-3D/Moonraker/pull/20) (open) already adds `moonraker/components/muon_link.py` with `[muon_link] admin_address: 127.0.0.1:7131`. It forwards exactly three routes to muon-link's loopback admin endpoint. **Build on it. Don't write a second component.**
 
-| Endpoint | Callers | Does |
+| Endpoint | Forwards to | Notes |
 |---|---|---|
-| `GET /server/muon/link` | panel, hotspot, lan | `{ phase, code?, expires_at?, account?, message? }`. The phases are `unavailable \| unlinked \| connecting \| code \| offer \| linked \| failed`, the same shape Fluidd expects. `unavailable` means muon-link isn't reachable. |
-| `POST /server/muon/link/start` | panel, hotspot, lan | Opens a pairing window (`/pairing/open`) and returns once the phase is `code`. It is rate-limited to 5 per minute per caller IP. |
-| `POST /server/muon/link/confirm` | **panel only; add to `FLOOR_PREFIXES`** | The knob Confirm on the offer (`/pairing/confirm`). When Aux's `KnobConfirmationBackend` (the one `dev_mode_consent` uses) works, route through it, so the proof is a physical press and not just a loopback caller. |
-| `POST /server/muon/link/cancel` | panel, hotspot, lan | `/pairing/cancel` |
+| `GET /server/muon/link` | `GET /link` | Returns the `LinkPhase` (§5.9). A 503 means muon-link isn't answering, and a 409 carries muon-link's `{"error"}` sentence. |
+| `POST /server/muon/link/start` | `POST /link/start` | Returns `connecting` at once. Fluidd's `startLanLink()` already polls until it sees `code`. |
+| `POST /server/muon/link/cancel` | `POST /link/cancel` | |
 
-- **Payloads.** KAN-190 doesn't specify the request or response bodies for muon-link's `/pairing/*`. Read them from muon-link at `86809b3` and map them to the phases above. If a phase can't be derived, stop and ask.
-- **Events.** Emit `muon_link:link_changed` (clients receive `notify_link_changed`) on every phase change. `muon_setup` listens with `register_event_handler`.
-- **Tests.** `tests/test_muon_link.py` with a fake admin endpoint, covering: the phase mapping, the rate limit, confirm refused from every caller kind except panel, and the floor membership test for `/server/muon/link/confirm`.
+**Confirm and unlink are never forwarded.** PR #20's tests assert this, following ADR 0018 and LINK-3. The panel calls muon-link's `POST /link/confirm`, `/link/cancel` and `/link/unlink` directly, through an nginx `/muon-link/` location on the loopback-only `:100` vhost (OS-10). Nothing is added to `FLOOR_PREFIXES` for linking.
+
+**MR-6 adds to PR #20**, after it merges or as a follow-up PR:
+
+1. **Polling and events.** muon-link pushes nothing, so `muon_link` polls `GET /link`: every 1 s while the phase is `connecting`, `code` or `offer`, and every 30 s otherwise, stopping when nothing is subscribed. It emits `muon_link:link_changed` (clients receive `notify_link_changed`) when the phase object changes.
+2. **Python methods.** Add public async `status()`, `start()` and `cancel()` for `muon_setup` to call, so it doesn't make HTTP calls to itself.
+3. **Rate limit.** Allow at most 5 `start` calls per minute per caller IP. muon-link has no limit of its own.
+4. **Tests.** Extend `tests/test_muon_link.py` to cover polling cadence, change detection and the rate limit.
+

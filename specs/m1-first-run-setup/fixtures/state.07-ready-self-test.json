@@ -85,10 +85,8 @@
       "error": null,
       "link": {
         "phase": "linked",
-        "code": null,
-        "expires_at": null,
-        "claim_url": null,
-        "account": "jed@example.com"
+        "account": "jed@example.com",
+        "connected": true
       }
     },
     "ready": {
