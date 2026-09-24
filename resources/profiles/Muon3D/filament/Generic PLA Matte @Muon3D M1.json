@@ -1,0 +1,11 @@
+{
+    "type": "filament",
+    "setting_id": "Muon_M1_PLAMAT_01",
+    "name": "Generic PLA Matte @Muon3D M1",
+    "from": "system",
+    "instantiation": "true",
+    "inherits": "Generic PLA @Muon3D M1",
+    "filament_max_volumetric_speed": [
+        "14"
+    ]
+}
