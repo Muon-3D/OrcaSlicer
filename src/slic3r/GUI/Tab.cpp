@@ -5169,9 +5169,9 @@ void TabPrinter::build_fff()
             return sizer;
         });
 
-        Option volume_option = optgroup->get_option("bed_exclude_volumes");
-        volume_option.opt.full_width = true;
-        optgroup->append_single_option_line(volume_option);
+        Option option = optgroup->get_option("bed_exclude_volumes");
+        option.opt.full_width = true;
+        optgroup->append_single_option_line(option);
         optgroup->append_single_option_line("bed_exclude_volume_mode");
         // optgroup->append_single_option_line("printable_area");
         optgroup->append_single_option_line("printable_height", "printer_basic_information_printable_space#printable-height");
