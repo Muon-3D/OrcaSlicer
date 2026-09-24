@@ -4,7 +4,7 @@ This page tracks the work packages in [10-work-plan.md](10-work-plan.md). The co
 
 Agents: the coordinator can't receive messages from you. Tell it where you are by pushing branches and opening PRs whose titles start with the package ID. Put questions in the PR body under **Spec questions**.
 
-**Last updated:** 24 Sep 2026, 20:05 UTC. PRs are open for MR-1, OS-1, OS-7, ML-1 and FL-7. Review comments were posted on Moonraker#22, MuonOS#312 and MuonOS#313 at 18:10. No new commits or replies since then.
+**Last updated:** 24 Sep 2026, 20:00 UTC. PRs are open for MR-1, OS-1, OS-7, ML-1 and FL-7. Review comments were posted on Moonraker#22, MuonOS#312 and MuonOS#313 at 18:10. No new commits or replies since then.
 
 ## Packages with work
 
