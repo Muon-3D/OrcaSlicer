@@ -14,6 +14,10 @@ class PrintObject;
 
 bool bed_exclusion_z_ranges_overlap(double first_min, double first_max, double second_min, double second_max);
 
+// libnest2d currently accepts only convex fixed obstacles. Keep convex
+// exclusions exact and conservatively use the bounding box for concave ones.
+Polygon bed_exclusion_arrange_polygon(const Polygon &polygon);
+
 // Return the union of exclusion footprints intersecting the requested extrusion
 // slab. Regions are already resolved into physical-nozzle/model coordinates by
 // PrintConfig; callers only provide the physical nozzles that may emit the

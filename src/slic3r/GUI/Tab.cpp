@@ -1854,9 +1854,7 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
                 _L("Convert exclusion volumes"), wxICON_QUESTION | wxYES | wxNO);
             if (dialog.ShowModal() == wxID_YES) {
                 DynamicPrintConfig converted = *m_config;
-                converted.set_key_value("bed_exclude_volumes", new ConfigOptionString(*definition));
-                converted.set_key_value("bed_exclude_volume_mode",
-                    new ConfigOptionEnum<BedExcludeVolumeMode>(BedExcludeVolumeMode::Shared));
+                append_bed_exclude_volumes(converted, *definition);
                 converted.set_key_value("bed_exclude_area", new ConfigOptionPoints());
                 load_config(converted);
                 on_presets_changed();
@@ -5138,29 +5136,29 @@ void TabPrinter::build_fff()
         });
         optgroup->append_single_option_line("parallel_printheads_count");
         create_line_with_widget(optgroup.get(), "bed_exclude_area", "printer_basic_information_printable_space#excluded-bed-area", [this](wxWindow *parent) {
-            Button *button = new Button(parent, _L("Convert area to collision volume"));
-            button->SetToolTip(_L("Convert the legacy excluded bed area into a collision volume so Orca can check G-code moves and reroute travel around it."));
+            Button *button = new Button(parent, _L("Convert") + " " + dots);
+            button->SetStyle(ButtonStyle::Regular, ButtonType::Parameter);
+            button->SetToolTip(_L("Convert each legacy excluded-bed rectangle into a full-height collision volume. Existing collision volumes and the selected multi-nozzle behaviour are preserved."));
             wxSizer *sizer = new wxBoxSizer(wxHORIZONTAL);
-            sizer->Add(button);
+            sizer->Add(button, 0, wxALIGN_CENTER_VERTICAL);
             button->Bind(wxEVT_BUTTON, [this](wxCommandEvent &) {
                 const ConfigOptionPoints *legacy = m_config->option<ConfigOptionPoints>("bed_exclude_area");
-                if (legacy == nullptr || legacy->values.size() < 3) {
-                    show_error(wxGetApp().plater(), _L("Configure a valid excluded bed area before converting it."));
+                const std::string definition = legacy != nullptr ?
+                    legacy_bed_exclude_area_to_volumes(legacy->values) : std::string{};
+                if (definition.empty()) {
+                    show_error(wxGetApp().plater(), _L("Configure a valid legacy excluded bed area containing one or more four-corner rectangles before converting it."));
                     return;
                 }
 
-                const std::string definition = legacy->serialize();
                 MessageDialog dialog(
                     wxGetApp().plater(),
-                    _L("Convert this legacy excluded bed area into a full-height collision volume? This enables G-code checking and travel avoidance."),
+                    _L("Convert the legacy excluded bed area into full-height collision volumes? They will be added to any existing collision volumes, the current multi-nozzle behaviour will be preserved, and the legacy area will be cleared."),
                     _L("Convert exclusion volume"), wxICON_QUESTION | wxYES | wxNO);
                 if (dialog.ShowModal() != wxID_YES)
                     return;
 
                 DynamicPrintConfig converted = *m_config;
-                converted.set_key_value("bed_exclude_volumes", new ConfigOptionString(definition));
-                converted.set_key_value("bed_exclude_volume_mode",
-                    new ConfigOptionEnum<BedExcludeVolumeMode>(BedExcludeVolumeMode::Shared));
+                append_bed_exclude_volumes(converted, definition);
                 converted.set_key_value("bed_exclude_area", new ConfigOptionPoints());
                 load_config(converted);
                 on_presets_changed();

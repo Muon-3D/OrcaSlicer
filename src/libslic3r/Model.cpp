@@ -3108,7 +3108,10 @@ void Model::setPrintSpeedTable(const DynamicPrintConfig& config, const PrintConf
     //auto print_config = print.config();
     //printSpeedMap.bed_poly.points = get_bed_shape(*(wxGetApp().plater()->config()));
     printSpeedMap.bed_poly.points = get_bed_shape(config);
-    Pointfs excluse_area_points = has_bed_exclude_volumes(print_config) ? Pointfs{} : print_config.bed_exclude_area.values;
+    // Collision volumes are additive to the legacy bed keep-out. Preserve the
+    // established printable-bed polygon so bed-edge and legacy-area brim
+    // clipping continue to work when collision volumes are also configured.
+    Pointfs excluse_area_points = print_config.bed_exclude_area.values;
     Polygons exclude_polys;
     Polygon exclude_poly;
     for (int i = 0; i < excluse_area_points.size(); i++) {

@@ -2348,6 +2348,14 @@ int bed_exclusion_extruder_for_filament(size_t filament_id, const std::vector<in
                                         size_t extruder_count);
 bool is_bed_exclusion_volume_syntax(const std::string &value);
 bool is_valid_bed_exclude_volumes_string(const std::string &value, double printable_height);
+// Legacy bed exclusions are stored as consecutive four-corner rectangles.
+// Serialize each rectangle as an independent full-height collision volume.
+// Returns an empty string when the legacy definition is not well formed.
+std::string legacy_bed_exclude_area_to_volumes(const Pointfs &points);
+// Add shared definitions without replacing existing volumes or changing the
+// configured multi-nozzle mode. In individual mode the new definitions are
+// applied to every physical extruder.
+void append_bed_exclude_volumes(DynamicPrintConfig &config, const std::string &definition);
 bool has_bed_exclude_volumes(const DynamicPrintConfig &cfg);
 bool has_bed_exclude_volumes(const PrintConfig &cfg);
 BedExcludeVolumeMode active_bed_exclude_volume_mode(const DynamicPrintConfig &cfg);

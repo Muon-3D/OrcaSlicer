@@ -231,9 +231,10 @@ struct BrimRun
 {
     double total_length {0.0};
     bool intersects_test_region {false};
+    bool leaves_bed {false};
 };
 
-BrimRun generate_brim(const std::string &exclusion_definition)
+BrimRun generate_brim(const std::string &exclusion_definition, const Vec2d &object_position = Vec2d(40.0, 40.0))
 {
     DynamicPrintConfig config = exclusion_config(BedExcludeVolumeMode::Shared, exclusion_definition);
     config.set_deserialize_strict({
@@ -244,7 +245,7 @@ BrimRun generate_brim(const std::string &exclusion_definition)
     });
 
     TriangleMesh mesh = make_cube(20.0, 20.0, 20.0);
-    mesh.translate(40.0f, 40.0f, 0.0f);
+    mesh.translate(float(object_position.x()), float(object_position.y()), 0.0f);
     Print print;
     Model model;
     Test::init_print(std::vector<TriangleMesh>{std::move(mesh)}, print, model, config, nullptr, false);
@@ -262,6 +263,13 @@ BrimRun generate_brim(const std::string &exclusion_definition)
         result.total_length += path.length();
     result.intersects_test_region =
         !intersection_pl(paths, Polygons{rectangle(32.0, 35.0, 38.0, 65.0)}).empty();
+    result.leaves_bed = std::any_of(paths.begin(), paths.end(), [](const Polyline &path) {
+        return std::any_of(path.points.begin(), path.points.end(), [](const Point &point) {
+            const Vec2d position = to_mm(point);
+            return position.x() < -EPSILON || position.x() > 100.0 + EPSILON ||
+                   position.y() < -EPSILON || position.y() > 100.0 + EPSILON;
+        });
+    });
     return result;
 }
 
@@ -638,6 +646,13 @@ TEST_CASE("Brim paths are clipped only by exclusions active on the first layer",
     CHECK_FALSE(active.intersects_test_region);
     CHECK(raised.intersects_test_region);
     CHECK(active.total_length < raised.total_length);
+}
+
+TEST_CASE("Brim paths remain clipped to the bed without collision volumes", "[ExclusionVolume][Brim][Regression]")
+{
+    const BrimRun brim = generate_brim("", Vec2d(21.0, 5.0));
+    REQUIRE(brim.total_length > 0.0);
+    CHECK_FALSE(brim.leaves_bed);
 }
 
 TEST_CASE("Support exclusion masks follow explicit and current-filament roles", "[ExclusionVolume][Support][MultiNozzle]")

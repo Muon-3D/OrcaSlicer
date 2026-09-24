@@ -27,6 +27,7 @@
 #include "libslic3r/Polyline.hpp"
 #include "libslic3r/ClipperUtils.hpp"
 #include "libslic3r/BoundingBox.hpp"
+#include "libslic3r/ExclusionVolumeGeometry.hpp"
 #include "libslic3r/Geometry.hpp"
 #include "libslic3r/Tesselate.hpp"
 #include "libslic3r/GCode/ThumbnailData.hpp"
@@ -6522,7 +6523,7 @@ bool PartPlateList::preprocess_exclude_areas(arrangement::ArrangePolygons &unsel
 
                 for (int plate_idx = 0; plate_idx < num_plates; ++plate_idx) {
                     arrangement::ArrangePolygon blocker;
-                    blocker.poly.contour = region.polygon;
+                    blocker.poly.contour = bed_exclusion_arrange_polygon(region.polygon);
                     blocker.translation = Vec2crd::Zero();
                     blocker.rotation = 0.0;
                     blocker.is_virt_object = true;

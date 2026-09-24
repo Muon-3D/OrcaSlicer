@@ -100,6 +100,48 @@ TEST_CASE("Legacy point options reject collision-volume syntax", "[ExclusionVolu
     CHECK(is_bed_exclusion_volume_syntax(definition));
 }
 
+TEST_CASE("Legacy rectangle groups convert into separate collision volumes", "[ExclusionVolume][PrintConfig]")
+{
+    ConfigOptionPoints legacy;
+    REQUIRE(legacy.deserialize("0x0,10x0,10x10,0x10,20x20,30x20,30x30,20x30"));
+    CHECK(legacy_bed_exclude_area_to_volumes(legacy.values) ==
+        "0x0,10x0,10x10,0x10|20x20,30x20,30x30,20x30");
+
+    legacy.values.pop_back();
+    CHECK(legacy_bed_exclude_area_to_volumes(legacy.values).empty());
+}
+
+TEST_CASE("Converted volumes preserve existing definitions and nozzle mode", "[ExclusionVolume][PrintConfig][MultiNozzle]")
+{
+    const std::string converted = "40x40,50x40,50x50,40x50";
+
+    SECTION("toolhead-relative definitions remain shared") {
+        DynamicPrintConfig config = two_extruder_config();
+        config.set_key_value("bed_exclude_volume_mode",
+            new ConfigOptionEnum<BedExcludeVolumeMode>(BedExcludeVolumeMode::ToolheadOffset));
+        append_bed_exclude_volumes(config, converted);
+
+        CHECK(config.opt_enum<BedExcludeVolumeMode>("bed_exclude_volume_mode") == BedExcludeVolumeMode::ToolheadOffset);
+        CHECK(config.opt_string("bed_exclude_volumes") ==
+            "10..30;0x0,10x0,10x10,0x10|40x40,50x40,50x50,40x50");
+    }
+
+    SECTION("individual definitions receive the former shared keep-out") {
+        DynamicPrintConfig config = two_extruder_config();
+        config.set_key_value("bed_exclude_volume_mode",
+            new ConfigOptionEnum<BedExcludeVolumeMode>(BedExcludeVolumeMode::PerExtruder));
+        config.set_key_value("extruder_bed_exclude_volumes", new ConfigOptionStrings{"", "60x60,70x60,70x70,60x70"});
+        append_bed_exclude_volumes(config, converted);
+
+        CHECK(config.opt_enum<BedExcludeVolumeMode>("bed_exclude_volume_mode") == BedExcludeVolumeMode::PerExtruder);
+        const ConfigOptionStrings *per_extruder = config.option<ConfigOptionStrings>("extruder_bed_exclude_volumes");
+        REQUIRE(per_extruder != nullptr);
+        REQUIRE(per_extruder->values.size() == 2);
+        CHECK(per_extruder->values[0] == converted);
+        CHECK(per_extruder->values[1] == "60x60,70x60,70x70,60x70|40x40,50x40,50x50,40x50");
+    }
+}
+
 TEST_CASE("Exclusion syntax validation accepts supported forms and rejects malformed regions", "[ExclusionVolume][PrintConfig]")
 {
     const auto [definition, valid] = GENERATE(table<std::string, bool>({
@@ -377,6 +419,24 @@ TEST_CASE("Exclusion Z overlap treats touching slabs conservatively", "[Exclusio
     CHECK(bed_exclusion_z_ranges_overlap(0.0, 10.0, 10.0, 20.0));
     CHECK(bed_exclusion_z_ranges_overlap(10.0, 0.0, 20.0, 10.0));
     CHECK_FALSE(bed_exclusion_z_ranges_overlap(0.0, 9.0, 10.0, 20.0));
+}
+
+TEST_CASE("Arrange keeps convex exclusions exact and bounds concave exclusions", "[ExclusionVolume][Geometry][Arrange]")
+{
+    const Polygon convex = rectangle(0.0, 0.0, 10.0, 10.0);
+    CHECK(bed_exclusion_arrange_polygon(convex).points == convex.points);
+
+    Polygon concave({
+        Point::new_scale(0.0, 0.0), Point::new_scale(10.0, 0.0),
+        Point::new_scale(10.0, 4.0), Point::new_scale(4.0, 4.0),
+        Point::new_scale(4.0, 10.0), Point::new_scale(0.0, 10.0),
+    });
+    concave.make_counter_clockwise();
+    REQUIRE_FALSE(concave.contains(Point::new_scale(8.0, 8.0)));
+
+    const Polygon blocker = bed_exclusion_arrange_polygon(concave);
+    CHECK(blocker.points.size() == 4);
+    CHECK(blocker.contains(Point::new_scale(8.0, 8.0)));
 }
 
 TEST_CASE("Active exclusion footprints select Z range nozzle translation and clearance", "[ExclusionVolume][Geometry][MultiNozzle]")

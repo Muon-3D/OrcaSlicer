@@ -440,8 +440,8 @@ static ExPolygons outer_inner_brim_area(const Print& print,
     std::vector<std::vector<BedExcludeRegion>> exclusion_regions_by_extruder;
     if (has_bed_exclude_volumes(print.config())) {
         exclusion_regions_by_extruder = get_bed_excluded_regions_by_extruder(print.config());
-        // Legacy areas historically constrain placement, not generated
-        // geometry. Only explicit collision volumes may trim a brim.
+        // The established bed polygon below still clips the bed edge and
+        // legacy areas. Only explicit volumes use the new Z-aware trimming.
         for (std::vector<BedExcludeRegion> &regions : exclusion_regions_by_extruder)
             regions.erase(std::remove_if(regions.begin(), regions.end(),
                 [](const BedExcludeRegion &region) { return !region.is_collision_volume(); }), regions.end());
@@ -646,6 +646,8 @@ static ExPolygons outer_inner_brim_area(const Print& print,
     if (extruder_unprintable_area.empty()) {
         extruder_unprintable_area.resize(extruder_nums, Polygons{Model::getBedPolygon()});
     }
+    const size_t physical_extruder_count = std::max<size_t>(
+        print.config().nozzle_diameter.size(), extruder_unprintable_area.size());
     if (print.has_wipe_tower() && !print.get_fake_wipe_tower().outer_wall.empty()) {
         ExPolygons expolyFromLines{};
         for (auto polyline : print.get_fake_wipe_tower().outer_wall.begin()->second) {
@@ -665,7 +667,7 @@ static ExPolygons outer_inner_brim_area(const Print& print,
 
         if (iter != objPrintVec.end() && iter->second > 0) {
             object_physical_extruders = bed_exclusion_physical_extruders(
-                print, { iter->second - 1 }, exclusion_regions_by_extruder.size(), 0);
+                print, { iter->second - 1 }, physical_extruder_count, 0);
             for (const size_t extruder_id : object_physical_extruders) {
                 if (extruder_id >= extruder_unprintable_area.size())
                     continue;
@@ -678,7 +680,7 @@ static ExPolygons outer_inner_brim_area(const Print& print,
         }
 
         if (object_physical_extruders.empty()) {
-            object_physical_extruders.resize(exclusion_regions_by_extruder.size());
+            object_physical_extruders.resize(physical_extruder_count);
             std::iota(object_physical_extruders.begin(), object_physical_extruders.end(), size_t(0));
         }
         const ExPolygons exclusions = active_bed_exclusion_footprints(

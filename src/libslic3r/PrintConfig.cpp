@@ -900,14 +900,15 @@ void PrintConfigDef::init_common_params()
     def->label = L("Exclusion volumes");
     def->tooltip = L("Collision volumes used for model and generated-material exclusion, G-code checking, and travel avoidance. "
         "Use \"XxY, XxY, ...\" for a full-height polygon or \"ZMIN..ZMAX;XxY, XxY, ...\" for a Z-limited volume. "
-        "Separate multiple volumes with \"|\". These volumes are additional to any legacy excluded bed area.");
+        "Separate multiple volumes with \"|\". These volumes are additional to any legacy excluded bed area. "
+        "Automatic arrangement conservatively uses the bounding box of a non-convex volume.");
     def->mode = comAdvanced;
     def->gui_type = ConfigOptionDef::GUIType::one_string;
     def->set_default_value(new ConfigOptionString());
 
     def = this->add("bed_exclude_volume_mode", coEnum);
     def->label = L("Exclusion volume behaviour");
-    def->tooltip = L("Choose whether all nozzles use the same exclusion volumes, derive toolhead-relative volumes from each nozzle's XY offset, or configure independent volumes for every extruder.");
+    def->tooltip = L("Choose whether all nozzles use the same exclusion volumes, derive toolhead-relative volumes from each nozzle's XY offset, or configure independent volumes for every extruder. In individual mode, configure the volumes on each Extruder page.");
     def->enum_keys_map = &ConfigOptionEnum<BedExcludeVolumeMode>::get_enum_values();
     def->enum_values = { "shared", "toolhead_offset", "per_extruder" };
     def->enum_labels = { L("Shared"), L("Toolhead-relative (nozzle offsets)"), L("Individual per extruder") };
@@ -916,7 +917,7 @@ void PrintConfigDef::init_common_params()
 
     def = this->add("extruder_bed_exclude_volumes", coStrings);
     def->label = L("Extruder exclusion volumes");
-    def->tooltip = L("Collision volumes used only by this extruder in individual mode. Use the same polygon and optional Z-range format as the shared exclusion volumes. Leave empty for no exclusion volumes on this extruder.");
+    def->tooltip = L("Collision volumes used only by this extruder in individual mode. Use the same polygon and optional Z-range format as the shared exclusion volumes. Leave empty for no exclusion volumes on this extruder. Automatic arrangement conservatively uses the bounding box of a non-convex volume.");
     def->mode = comAdvanced;
     def->gui_type = ConfigOptionDef::GUIType::one_string;
     def->set_default_value(new ConfigOptionStrings{ "" });
@@ -13353,6 +13354,52 @@ bool is_valid_bed_exclude_volumes_string(const std::string &value, const double 
             return false;
     }
     return found_nonempty;
+}
+
+std::string legacy_bed_exclude_area_to_volumes(const Pointfs &points)
+{
+    // The legacy option has always interpreted each consecutive group of four
+    // points as a separate rectangular keep-out. Preserve that meaning instead
+    // of joining several rectangles into one invalid concave polygon.
+    if (points.size() < 4 || points.size() % 4 != 0)
+        return {};
+
+    std::string result;
+    for (size_t offset = 0; offset < points.size(); offset += 4) {
+        const Pointfs rectangle(points.begin() + offset, points.begin() + offset + 4);
+        const std::string serialized = ConfigOptionPoints(rectangle).serialize();
+        if (!result.empty())
+            result += '|';
+        result += serialized;
+    }
+    return result;
+}
+
+void append_bed_exclude_volumes(DynamicPrintConfig &config, const std::string &definition)
+{
+    if (definition.empty())
+        return;
+
+    const auto append = [&definition](const std::string &current) {
+        return current.empty() ? definition : current + '|' + definition;
+    };
+    const BedExcludeVolumeMode mode = config.has("bed_exclude_volume_mode") ?
+        config.opt_enum<BedExcludeVolumeMode>("bed_exclude_volume_mode") : BedExcludeVolumeMode::Shared;
+    if (mode == BedExcludeVolumeMode::PerExtruder) {
+        const ConfigOptionStrings *current = config.option<ConfigOptionStrings>("extruder_bed_exclude_volumes");
+        std::vector<std::string> definitions = current != nullptr ? current->values : std::vector<std::string>{};
+        const ConfigOptionFloats *nozzles = config.option<ConfigOptionFloats>("nozzle_diameter");
+        const size_t extruder_count = std::max<size_t>(1, nozzles != nullptr ? nozzles->size() : 0);
+        definitions.resize(std::max(definitions.size(), extruder_count));
+        for (size_t extruder_id = 0; extruder_id < extruder_count; ++extruder_id)
+            definitions[extruder_id] = append(definitions[extruder_id]);
+        config.set_key_value("extruder_bed_exclude_volumes", new ConfigOptionStrings(std::move(definitions)));
+        return;
+    }
+
+    const ConfigOptionString *current = config.option<ConfigOptionString>("bed_exclude_volumes");
+    config.set_key_value("bed_exclude_volumes", new ConfigOptionString(
+        append(current != nullptr ? current->value : std::string{})));
 }
 
 bool has_bed_exclude_volumes(const DynamicPrintConfig &cfg)

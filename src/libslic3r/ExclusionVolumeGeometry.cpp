@@ -1,6 +1,8 @@
 #include "ExclusionVolumeGeometry.hpp"
 
+#include "BoundingBox.hpp"
 #include "ClipperUtils.hpp"
+#include "Geometry/ConvexHull.hpp"
 #include "Print.hpp"
 
 #include <algorithm>
@@ -55,6 +57,21 @@ bool bed_exclusion_z_ranges_overlap(
     if (second_min > second_max)
         std::swap(second_min, second_max);
     return first_max >= second_min - Z_EPSILON_MM && first_min <= second_max + Z_EPSILON_MM;
+}
+
+Polygon bed_exclusion_arrange_polygon(const Polygon &polygon)
+{
+    if (polygon.points.size() < 3)
+        return polygon;
+
+    const Polygon convex_hull = Geometry::convex_hull(polygon.points);
+    const double polygon_area = std::abs(polygon.area());
+    const double hull_area = std::abs(convex_hull.area());
+    const double tolerance = std::max(1.0, hull_area) * 1e-12;
+    if (std::abs(hull_area - polygon_area) <= tolerance)
+        return polygon;
+
+    return get_extents(polygon).polygon();
 }
 
 ExPolygons active_bed_exclusion_footprints(
