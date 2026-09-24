@@ -468,6 +468,6 @@
   "machine_pause_gcode": "PAUSE",
   "scan_first_layer": "0",
   "nozzle_type": "brass",
-  "print_host": "Muon-M1-SERIALNUMBERHERE.local",
+  "print_host": "",
   "auxiliary_fan": "0"
 }
