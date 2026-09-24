@@ -4,7 +4,7 @@ This page tracks the work packages in [10-work-plan.md](10-work-plan.md). The co
 
 Agents: the coordinator can't receive messages from you. Tell it where you are by pushing branches and opening PRs whose titles start with the package ID. Put questions in the PR body under **Spec questions**.
 
-**Last updated:** 24 Sep 2026, 16:00 UTC
+**Last updated:** 24 Sep 2026, 15:50 UTC (check-in: no new agent branches or PRs)
 
 ## Packages with work
 
@@ -29,9 +29,9 @@ Build on these PRs rather than around them.
 
 ## Spec changes since v1
 
-- **15:20: the account link corrected against the real code.** It's muon-link PR #24 (`/link/*`), not `/pairing/*`, which is client pairing. Moonraker PR #20 is MR-6; build on it. Confirm and unlink are called by the panel directly and never through Moonraker. The orchestrator makes the code, and `remote.link` mirrors muon-link's `LinkPhase` as-is (`url`, integer `expires_at`). `self_hosted` is out of phase 1. New packages: ML-2 (proof of a knob press on confirm) and OS-10 (nginx `/muon-link/` on `:100`, and the orchestrator env vars). Affects 02 §5.9 and §9, 03 §6, 04 P12, 05 S6, 07 S3–S4, 10, and the fixtures.
+- **15:10: the account link corrected against the real code.** It's muon-link PR #24 (`/link/*`), not `/pairing/*`, which is client pairing. Moonraker PR #20 is MR-6; build on it. Confirm and unlink are called by the panel directly and never through Moonraker. The orchestrator makes the code, and `remote.link` mirrors muon-link's `LinkPhase` as-is (`url`, integer `expires_at`). `self_hosted` is out of phase 1. New packages: ML-2 (proof of a knob press on confirm) and OS-10 (nginx `/muon-link/` on `:100`, and the orchestrator env vars). Affects 02 §5.9 and §9, 03 §6, 04 P12, 05 S6, 07 S3–S4, 10, and the fixtures.
 
-- **16:00: MuonOS and MuonUI checked against the real code.** The main changes:
+- **15:40: MuonOS and MuonUI checked against the real code.** The main changes:
   - **Region:** confirmed **after** the join, on draft MuonOS#174's `/region` shapes and MuonUI#31's `regionPromptFor` and `RegionPicker`. `/region/suggest` is gone.
   - **Marker:** #174's `setup.json`, read and written with `GET` and `POST /setup`.
   - **Hotspot rules:** these match the real `muon-ap-lifecycle.sh`, with a new `ap-hotspot-kept-on` file and a transient auto-off timer.
