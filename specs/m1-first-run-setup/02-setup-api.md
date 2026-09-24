@@ -17,7 +17,7 @@ The implementing agent must match these repo conventions. They were verified in 
 | Database | Moonraker SQLite at `/home/printer_data/database`. It survives reboots and OTA updates and is wiped by a factory reset (ID-2/ID-3). Register a **new** namespace with `database.register_local_namespace("muon_setup", forbidden=True)`. Don't register `"muon"` again, because `aux_api_proxy` already owns it and a second registration raises. |
 | Talking to Aux | Use the helpers on `aux_api_proxy` (`get()` / `post()`), which add `X-Aux-Api-Key` and map Aux errors. Don't make raw HTTP calls to `127.0.0.1:6789`. |
 | Startup | `component_init` must **not** raise if Aux is down. Register every endpoint in `__init__`. Endpoints that need Aux return `{"ok": false, "error": {"code": "aux_unavailable"}}` until Aux answers. `aux_api_proxy` currently fails to register identity when Aux is late; don't repeat that mistake ([10-work-plan.md MR-9](10-work-plan.md)). |
-| Floor | `muon_floor.py` only knows *loopback* and *network*. Add `/server/muon/setup/reset` to `FLOOR_PREFIXES` and extend `tests/test_muon_floor.py`. **Also add it to the 403 list in MuonOS's `fluidd.nginx.template`**: a MuonOS test requires the two lists to match. Every other rule in §3 is enforced inside this component. |
+| Floor | `muon_floor.py` only knows *loopback* and *network*. Add `/server/muon/setup/reset` **and `/server/aux/setup/complete`** to `FLOOR_PREFIXES`, and extend `tests/test_muon_floor.py`. **Also add it to the 403 list in MuonOS's `fluidd.nginx.template`**: a MuonOS test requires the two lists to match. Every other rule in §3 is enforced inside this component. |
 | Tests | Plain pytest unit tests with hand-written fakes (`FakeServer`, `FakeConfig`, `FakeWebRequest`, a fake `database` with async `get_item`/`insert_item`/`delete_item`/`register_local_namespace`, and a fake `aux_api_proxy`). Run coroutines with `asyncio.run(...)`, as in `tests/test_aux_api_proxy.py`. CI runs flake8 (max line 88) and mypy over `moonraker`, so both must pass. |
 
 ## 2. Config
@@ -89,7 +89,7 @@ If an `Origin` header is present, it must match the same set. Websocket JSON-RPC
 
 - **Namespace** `muon_setup`, **key** `state`: the whole state document in §6, minus the fields computed on read (`hotspot`, `clock`, `capabilities`).
 - **Write-through.** Persist before sending the change notification. Use `insert_item` and await it.
-- **Completion marker.** On `finish`, also call Aux `POST /setup {complete: true, language, completed_at}`. This is #174's `/var/lib/muon3d/setup/setup.json` ([03-printer-os.md §7](03-printer-os.md#7-completion-marker-and-factory-reset)), and the OS hotspot rules read it. `muon_setup` reads `GET /setup` only in the migration check. Once `muon_setup` has state of its own, that state is authoritative, so a development `reset` works even though the marker can't be un-completed.
+- **Completion marker.** On `finish`, also call Aux `POST /setup/complete {"by": "muon_setup"}` (MuonOS KAN-413, [03-printer-os.md §7](03-printer-os.md#7-completion-marker-and-factory-reset)). The OS hotspot rules read that marker. `muon_setup` reads `GET /setup/complete` only in the migration check. `reset` calls `DELETE /setup/complete`. Once `muon_setup` has state of its own, that state is authoritative.
 - **First start with no stored state.** Run the migration check in [01-flow.md §7](01-flow.md#7-printers-already-in-the-field) before creating a `new` state.
 - **Schema version.** `"version": 1`. Load an unknown version as read-only, log it, and treat it as `complete`, so a downgrade never re-runs setup.
 
@@ -386,7 +386,7 @@ MuonOS ships the manifest at `ready_manifest` (`/usr/share/muon/setup/ready.json
 | `POST /server/muon/setup/skip` | `{ "rev": n, "step": "network"\|"update"\|"remote"\|"ready" }` | Marks the step `skipped`. `language` gives `not_skippable`. |
 | `POST /server/muon/setup/finish` | `{ "rev": n }` | Requires `language` to be `done`, otherwise `required_steps_pending`. Remaining `pending` optional steps become `skipped`. Then `state = complete`, the marker is written, `muon_setup:complete` fires, and the hotspot auto-off is scheduled ([03-printer-os.md §1](03-printer-os.md#1-hotspot-lifecycle)). |
 | `POST /server/muon/setup/card/dismiss` | `{ "rev": n }` | `card_dismissed = true` |
-| `POST /server/muon/setup/reset` | `{}` | Panel only and floored. Clears the `muon_setup` namespace and starts over as `new`. The marker can't be un-completed (#174), but `muon_setup`'s own state takes precedence over it. For development and support; a real factory reset clears everything (ADR 0005). |
+| `POST /server/muon/setup/reset` | `{}` | Panel only and floored. Clears the `muon_setup` namespace, calls Aux `DELETE /setup/complete`, and starts over as `new`. For development and support; a real factory reset clears everything (ADR 0005). |
 
 ## 6. State document
 

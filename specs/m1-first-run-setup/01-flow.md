@@ -177,7 +177,7 @@ These apply to every surface.
 
 Printers updated from firmware that had no setup flow MUST NOT be sent into setup. The first time `muon_setup` starts with no stored state, it treats the printer as already set up if any of these exist:
 
-- a marker, i.e. Aux `GET /setup` returns `complete: true`;
+- a marker, i.e. Aux `GET /setup/complete` returns `complete: true` (MuonOS KAN-413);
 - a saved NetworkManager Wi-Fi profile other than `ap0-con` and the development image's baked `Muon3D_Dev` profile. Reading saved profiles needs `GET /wifi/saved` (MuonOS#210); until then, use `GET /wifi/show?ssid=` on the scan results;
 - a link (muon-link `GET /link` returns `linked`);
 - a Moonraker database that already holds Fluidd UI settings.

@@ -44,7 +44,7 @@ This folder specifies how a new Muon3D M1 gets from the box to its first print. 
  panel (Chromium kiosk)  │  nginx :100 (lo) ─▶ MuonUI ─▶ /server ─▶ │                   │    │
  + knob (sk_daemon)      │                                          ▼                   │    │
                          │                              aux_api_proxy ─▶ Aux API :6789 (lo)   │
-                         │                                   /wifi/* /region/* /time* /setup
+                         │                                   /wifi/* /region/* /time* /setup/complete
                          │                                   ─▶ NetworkManager, regdomain, timedatectl
                          └───────────────────────────────────────────────────────────────────┘
  app.muon3d.com (https) ── can't reach the LAN ──▶ "What does the screen show?" → code → console /v1/links/*
@@ -95,14 +95,14 @@ This folder specifies how a new Muon3D M1 gets from the box to its first print. 
 | Level 0 Open | SEC-1: the LAN and the hotspot are trusted, with no sign-in. |
 | The floor | `muon_floor.FLOOR_PREFIXES`: endpoints refused to anything but loopback. |
 | Link | Binding the printer to a Muon account: a code on the panel, a claim on app.muon3d.com, then a knob confirm. |
-| Marker | `/var/lib/muon3d/setup/setup.json` (MuonOS#174), which records that setup finished (KAN-203). |
+| Marker | `/var/lib/muon3d/setup/complete`, behind Aux `/setup/complete` (MuonOS KAN-413). It records that setup finished (KAN-203). |
 
 ## Verify before building
 
 Each repo was checked against the code on 24 Sep (Moonraker `dc76b59`, Fluidd `9694dec`, OrcaSlicer, MuonOS `4d9f6e3`, MuonUI `f5ffa7c`, muon-link `bfcd43f`). What's still open:
 
 1. **Draft PRs this spec builds on.** Several pieces exist only in unmerged PRs:
-   - MuonOS#174 (region and setup routes, `setup.json`);
+   - MuonOS#174 (region routes; its own setup routes are superseded by KAN-413);
    - MuonOS#210 (`/wifi/saved`);
    - MuonOS#305 (listeners);
    - MuonUI#31 (setup route, region picker);

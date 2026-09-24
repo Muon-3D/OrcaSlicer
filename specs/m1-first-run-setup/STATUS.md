@@ -4,7 +4,7 @@ This page tracks the work packages in [10-work-plan.md](10-work-plan.md). The co
 
 Agents: the coordinator can't receive messages from you. Tell it where you are by pushing branches and opening PRs whose titles start with the package ID. Put questions in the PR body under **Spec questions**.
 
-**Last updated:** 24 Sep 2026, 15:50 UTC (check-in: no new agent branches or PRs)
+**Last updated:** 24 Sep 2026, 16:40 UTC
 
 ## Packages with work
 
@@ -13,6 +13,9 @@ Agents: the coordinator can't receive messages from you. Tell it where you are b
 | OR-1 | OrcaSlicer | [Muon-3D/OrcaSlicer#3](https://github.com/Muon-3D/OrcaSlicer/pull/3) | In review | Matches the spec. The red "Check profiles" isn't caused by this PR: it's red on `main` (run 36002278074) and has been on every run since January. The PR's second commit fixes the system-profile step. The custom-preset step still fails because upstream vendors that this fork lacks are missing. |
 | OR-2 | OrcaSlicer | [Muon-3D/OrcaSlicer#4](https://github.com/Muon-3D/OrcaSlicer/pull/4) | In review | Matches the spec. It uses `/#/setup`, which works before OS-1's redirect lands. Linux build passed; macOS still running. The Windows build failed on a deps cache miss (`fail-on-cache-miss`) before any code compiled, and "Build all" is also red on `main`. |
 | MR-6 | Moonraker | [Muon-3D/Moonraker#20](https://github.com/Muon-3D/Moonraker/pull/20) (opened before this spec) | In review | Already implements `GET /server/muon/link`, `POST …/start` and `POST …/cancel`, bridging to muon-link at `127.0.0.1:7131`. Confirm is deliberately **not** in Moonraker (ADR 0018, LINK-3). Build on this PR; don't write a second `muon_link`. |
+| MR-1 | Moonraker | branch `claude/m1-first-run-setup` @ `0c11719` (no PR yet) | **Changes needed** | A solid core. It passes request headers through for the CSRF and Host checks, floors `reset`, and has fakes and tests. It was written against an older spec, so it needs these changes: **(1)** marker calls become `GET /setup/complete`, and `POST /setup/complete {"by":"muon_setup"}` at `finish`; `reset` calls `DELETE /setup/complete`. **(2)** Add `/server/aux/setup/complete` to `FLOOR_PREFIXES`, with a test. **(3)** Region: `state.region` must be Aux `GET /region` passed through as-is, plus the derived `market`, and `options.region` must be `GET /region/options` as-is. Drop the `for_language`, `all`, `support_code` and `source` reshaping in `region.py`, and carry `network.region_confirmed` (02 §5.2, §5.6, §6). **(4)** Read the station count from `POST /wifi/ap/count` only; `/wifi/ap/stations` was dropped, and polling it would 404 every 2 s. |
+| OS-7 | MuonOS | branch `feat/KAN-413-setup-marker` @ `9bcb4cc` (no PR yet) | **Adopted as the marker contract** | `GET`, `POST` and `DELETE /setup/complete`, persisted by `muon3d-setup.toml`, with the ID-9 and data-inventory rows. The spec now follows it (03 §7). Still to add: `/server/aux/setup/complete` in `fluidd.nginx.template`'s 403 list and in `test_floor.py`, paired with MR-1's floor change. Coordinate with #174, whose own `setup_routes.py`/`setup.toml` under `/setup` would conflict. |
+| ML-1 | muon-link | branch `feat/ML-1-link-contract` @ `b9f9678`, stacked on #24 (no PR yet) | **Matches the spec** | `docs/ACCOUNT_LINK_ADMIN.md` and `tests/link_admin_contract.rs` pin the same `LinkPhase` shapes and 409s as 02 §5.9. |
 
 ## In-flight work that overlaps the spec
 
@@ -33,7 +36,7 @@ Build on these PRs rather than around them.
 
 - **15:40: MuonOS and MuonUI checked against the real code.** The main changes:
   - **Region:** confirmed **after** the join, on draft MuonOS#174's `/region` shapes and MuonUI#31's `regionPromptFor` and `RegionPicker`. `/region/suggest` is gone.
-  - **Marker:** #174's `setup.json`, read and written with `GET` and `POST /setup`.
+  - **Marker:** #174's `setup.json` via `GET` and `POST /setup`. *Superseded at 16:40 by KAN-413's `/setup/complete`, below.*
   - **Hotspot rules:** these match the real `muon-ap-lifecycle.sh`, with a new `ap-hotspot-kept-on` file and a transient auto-off timer.
   - **Captive portal:** the nginx snippet now passes `nginx -t`; D11 makes the hotspot reach the printer only.
   - **Wi-Fi join:** a `status: "restored"` response now counts as a failure.
@@ -43,6 +46,8 @@ Build on these PRs rather than around them.
   - **New packages:** OS-11 (**urgent:** Wi-Fi PSKs are logged to the persisted journal by sudo) and UI-0.
   - **Also recorded:** no unit can declare a region yet, because there are no signing keys.
 
+- **16:40: the marker contract follows MuonOS KAN-413.** It's `GET`, `POST` and `DELETE /setup/complete` over `/var/lib/muon3d/setup/complete`, not #174's `/setup`. The whole `/server/aux/setup/complete` prefix is floored in both Moonraker and the MuonOS nginx list. Affects 01 §7, 02 §1, §4 and §5.11, 03 §1 and §7, 10 (OS-7, MR-1), and the README.
+
 ## Not started yet
 
-No branches seen yet for MR-1–MR-5, MR-7–MR-9, OS-*, ML-1, UI-*, FL-*, CON-1, or QA-*.
+No branches seen yet for MR-2–MR-5, MR-7–MR-9, OS-1–OS-6, OS-8–OS-11, UI-*, FL-*, CON-1, or QA-*. **OS-11 (Wi-Fi passwords in the journal) is urgent and still unassigned.**

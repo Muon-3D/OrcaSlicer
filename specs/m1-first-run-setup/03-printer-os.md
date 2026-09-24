@@ -34,7 +34,7 @@ Aux is published to Moonraker automatically: `aux_api_proxy` rebuilds `/server/a
 
 | Rule | When | AP |
 |---|---|---|
-| H1 | Setup isn't complete: `setup.json` (§7) is missing or has `complete != true` | **Up**, whatever the owner-choice file says |
+| H1 | Setup isn't complete: the marker `/var/lib/muon3d/setup/complete` (§7) is missing | **Up**, whatever the owner-choice file says |
 | H2 | Setup is complete and `wlan0` isn't connected | **Up** (unchanged) |
 | H3 | Setup is complete, an uplink (`wlan0` or `eth0`) is connected, the auto-off deadline has passed, and `/home/printer_admin/ap-hotspot-kept-on` is absent | **Down** |
 | H4 | The owner turns it on (Settings › Add a phone or computer, or the hotspot card) | **Up**. This writes `ap-hotspot-kept-on`, a **new** file name, because pre-KAN-341 units may still have `ap-hotspot-requested`. Turning it off removes the file and writes `ap-hotspot-disabled`, as today. |
@@ -274,24 +274,26 @@ Errors come back as `409 {"error": "<sentence>"}`. Nothing is pushed, so callers
 
 ## 7. Completion marker and factory reset
 
-**Adopt #174's design.** The marker is `/var/lib/muon3d/setup/setup.json`, holding `{complete, language, completed_at}`. `setup.toml` persists it.
+**Contract (decided 16:40): MuonOS branch `feat/KAN-413-setup-marker` (OS-7).** It replaces #174's `GET/POST /setup` for the marker.
 
-| Route | Notes |
+| Route | Does |
 |---|---|
-| `GET /setup` | – |
-| `POST /setup` | Refuses `complete:false`. #174 deliberately has no un-complete. |
+| `GET /setup/complete` | Returns `{ "complete", "completed_at", "by" }` |
+| `POST /setup/complete` `{ "by": "muon_setup" }` | Writes the marker. Idempotent: the first record is kept. |
+| `DELETE /setup/complete` | Clears the marker. Used only by `muon_setup`'s development `reset`. |
 
-- **`muon_setup` writes `POST /setup` at `finish`.** It reads `GET /setup` only for the migration check ([01-flow.md §7](01-flow.md#7-printers-already-in-the-field)).
-  - Once `muon_setup` has state of its own, that state is authoritative.
-  - A development `reset` therefore works without clearing the marker.
-- **`POST /server/aux/setup` goes on the floor**, in both lists. A LAN client can't mark setup complete.
-- **Inventory.** Add rows to the ID-9 inventory (`docs/connectivity/SPEC.md:211-236` and `recipes/factory-reset/tests/connectivity-state.toml`) and to `docs/privacy/data-inventory.md` for:
-  - `setup/`
-  - `region/declared-country`
-  - the time-zone file
-  - `ap-hotspot-kept-on`
+- **The marker** is `/var/lib/muon3d/setup/complete`. Its existence is the fact, so a damaged file still reads as complete; the hotspot lifecycle checks it with `[[ -e ]]`.
+- **Persisted** by `muon3d-setup.toml`. It survives OTA updates and rollback, and a factory reset removes it. KAN-413 adds the ID-9 and data-inventory rows.
+- **`muon_setup` writes it** with `POST /setup/complete` at `finish`. It reads `GET /setup/complete` only during the migration check ([01-flow.md §7](01-flow.md#7-printers-already-in-the-field)). Once `muon_setup` has its own state, that state is authoritative.
+- **The whole prefix `/server/aux/setup/complete` must be floored**, in **both** lists:
+  - Moonraker's `FLOOR_PREFIXES`;
+  - MuonOS `fluidd.nginx.template`'s 403 list, and `recipes/klipper_moonraker_fluidd/tests/test_floor.py`.
 
-  `test_persisted_state.py` enforces that these match.
+  Without it, a LAN client could `DELETE` the marker through `aux_api_proxy`.
+- **#174 and MuonUI#31 overlap with this.**
+  - #174 has its own `setup_routes.py` and `setup.toml` under the same `/setup` prefix. It must drop them, or rebase onto KAN-413.
+  - MuonUI#31's `aux.setup.get()` and `aux.setup.complete()` calls go away (UI-1).
+- **Time zone.** `/var/lib/muon3d/setup/timezone` (OS-6) sits in the same persisted directory.
 
 **Factory reset** is `/usr/sbin/muon3d-factory-reset`, run as root from the console or SSH. It runs `rugix-ctrl state reset`, which clears everything persisted.
 
@@ -300,7 +302,7 @@ Errors come back as `409 {"error": "<sentence>"}`. Nothing is pushed, so callers
 | Market token (config partition) | Survives |
 | Hostname and SSID | Re-derived from the serial, so the printer keeps the same name |
 | Hotspot key | Regenerated, so the Wi-Fi QR code changes |
-| Declared country and setup marker | Cleared, once #174's persist files have merged |
+| Declared country and setup marker | Cleared (the marker once KAN-413 merges, the country once #174 merges) |
 
 ## 8. Phase 2: Bluetooth
 
