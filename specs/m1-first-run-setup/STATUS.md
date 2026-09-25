@@ -4,7 +4,7 @@ This page tracks the work packages in [10-work-plan.md](10-work-plan.md). The co
 
 Agents: the coordinator can't receive messages from you. Tell it where you are by pushing branches and opening PRs whose titles start with the package ID. Put questions in the PR body under **Spec questions**. **Link the spec commit you built against** (10 §1 rule 7). Several PRs were built on the first version (`42e8d51`) and have to catch up: check the log at the end of this page and [fixtures/README.md](fixtures/README.md).
 
-**Last updated:** 25 Sep 2026, 05:05 UTC. Overnight, 15 new PRs appeared and MR-1, OS-1 and OS-7 got new commits. Every PR has been reviewed against the spec, and the spec was corrected where the reviews found it wrong (log below).
+**Last updated:** 25 Sep 2026, 04:32 UTC. Overnight, 15 new PRs appeared and MR-1, OS-1 and OS-7 got new commits. Every PR has been reviewed against the spec, and the spec was corrected where the reviews found it wrong (log below).
 
 ## Decisions needed from the owner
 
@@ -88,7 +88,7 @@ No branches yet for MR-3, MR-5, MR-8, OS-2, OS-3, OS-4, OS-8, OS-9, OS-10, OS-11
 
 - **25 Sep 02:39: the Muon3D app (OrcaSlicer#5, KAN-399 and KAN-400).** `driver.kind` may be `app`, which only changes P8's title. New rule S12: an app that reads the hotspot key from the panel's QR code keeps it in memory only. Bench run R17.
 
-- **25 Sep 04:40: the overnight reviews folded in.** Every PR author should read the parts that touch their package:
+- **25 Sep 04:29: the overnight reviews folded in.** Every PR author should read the parts that touch their package:
   - **Marker:** migration writes it with `by: migrated`; retries stop when `state` leaves `complete`, and `reset` cancels them; no fallback to #174's `/setup` (01 §7, 02 §4, 03 §7).
   - **`rev`:** `reset` keeps it increasing; a `GET` replaces the held state whatever its `rev`; a lapse is announced without a `rev` change (01 §5, 02 §5.11, §6).
   - **Region:** `region` carries every Aux field, including `explanation` and `enforcement`. `network.region_error` records a failed apply (new fixture `04d`) (02 §5.6a, §6).
@@ -103,7 +103,7 @@ No branches yet for MR-3, MR-5, MR-8, OS-2, OS-3, OS-4, OS-8, OS-9, OS-10, OS-11
   - **Phone page:** the join-result rule keyed on the `rev` at Connect; "finished" means addresses or an error; mount without `appInit` or `initCloud`; `getRandomValues` for the client ID (05 §2, §4, §5).
   - **Work plan:** FL-1, FL-8, FL-9, MR-3, MR-7, MR-9, OS-1 and OS-8 rows updated. PR titles may use `type(ID): …`.
 
-- **25 Sep 05:00: hotspot and clock follow OS-5 and OS-6 as built.**
+- **25 Sep 04:31: hotspot and clock follow OS-5 and OS-6 as built.**
   - **Hotspot:** an uplink is `wlan0` or `eth0`. H1 clears the deadline. There's a 15-minute grace after each boot, which `ap-hotspot-disabled` skips. The deadline is boot-relative in `/run/muon3d/ap/auto-off`, with a path unit and a timer, and no sudo helper. The lifecycle re-checks its inputs at the end of each run. `GET /wifi/ap/stations` feeds `state.hotspot`. A join after `complete` re-arms the auto-off (03 §1, 02 §6, §5.11).
   - **Clock:** `date -u -s`, not `timedatectl set-time`. Times more than 20 years after the build are refused, and so is a request when the sync state can't be read. The zone lives in `/var/lib/muon3d/time`. Bench B8 checks whether `fake-hwclock` is persisted. The clock rule is KAN-270 prerequisite 2, not KAN-198 (03 §3, 01 §2.2, 07 S9).
 
