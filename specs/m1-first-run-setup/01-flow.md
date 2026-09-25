@@ -98,7 +98,7 @@ step.status:   pending ──▶ done ──(value changed later)──▶ done
 - **`driver`** is who is in charge: `panel`, `phone`, `web`, `app` (the Muon3D phone app) or `bluetooth` (phase 2).
   - It's advisory. Any allowed writer may write, and a write from a surface that isn't the driver makes that surface the driver.
   - Every write carries the state's `rev`. A write with an old `rev` gets `stale_rev` and the current state, so two screens can't overwrite each other without knowing.
-  - The phone renews its claim every 10 s. The panel treats a claim older than 30 s as lapsed.
+  - A phone, a computer or the app renews its claim every 10 s. The panel treats a claim older than 30 s as lapsed.
 - **Persistence.** Every change is saved before the event is sent ([02-setup-api.md §4](02-setup-api.md#4-persistence)). After a power loss, setup resumes at the same `cursor` on whichever screen picks it up.
 
 ## 4. Happy paths
