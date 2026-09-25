@@ -68,7 +68,7 @@ Which screen shows is a pure function of the state (§5). The page keeps no step
 | **S7 At the printer** | cursor = `ready` | "Last steps happen at the printer", with the manifest items and their live status. | **Skip for now** posts `skip ready`. |
 | **S8 Done** | `state == complete` and the page drove setup this session | "Walnut is ready". **Open Walnut** is a link to `http://<hostname>.local/` with the IP link under it. Also "How to send your first print: add Walnut in OrcaSlicer (Printer › Connection › Browse)", and the skipped steps as a list. "Walnut's hotspot turns off in 15 minutes and your phone will go back to its usual Wi-Fi." | – |
 | **S9 Following the panel** | `driver.kind == "panel"` and not lapsed | "Walnut's screen is in charge" with the current step name. | **Continue here** claims the driver. |
-| **S10 Set up already** | `state == complete` and the page didn't drive setup (e.g. the hotspot fallback, E5) | "Walnut is set up". The network status shows `network.ssid`, or "Not connected" in recovery mode. | **Change Wi-Fi** runs S3/S4 against the complete state. **Open Walnut** is a link. |
+| **S10 Set up already** | `state == complete` and the page didn't drive setup (e.g. the hotspot fallback, E5) | "Walnut is set up". The network status shows `network.ssid`, or "Not connected" in recovery mode. At SEC-8 Level 1, a write answers 403 `protected`: show "Walnut is protected. Change Wi-Fi on its screen." ([08](08-errors.md)). | **Change Wi-Fi** runs S3/S4 against the complete state. **Open Walnut** is a link. |
 
 ### 3.1 Region
 

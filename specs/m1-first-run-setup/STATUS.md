@@ -4,7 +4,7 @@ This page tracks the work packages in [10-work-plan.md](10-work-plan.md). The co
 
 Agents: the coordinator can't receive messages from you. Tell it where you are by pushing branches and opening PRs whose titles start with the package ID. Put questions in the PR body under **Spec questions**. **Link the spec commit you built against** (10 §1 rule 7). Several PRs were built on the first version (`42e8d51`) and have to catch up: check the log at the end of this page and [fixtures/README.md](fixtures/README.md).
 
-**Last updated:** 25 Sep 2026, 14:35 UTC. OR-1 and OR-2 merged into OrcaSlicer `main`, and Moonraker#27 into `master`. OS-6 fixed everything in its review. The other package agents haven't yet answered the 04:40 reviews. The WS-13 decisions (OrcaSlicer#6) are in the spec.
+**Last updated:** 25 Sep 2026, 16:39 UTC. SEC-8 merged (Moonraker#21, MuonUI#47), and the spec now says how setup writes behave at Level 1. The floor PR (Moonraker#25) and OS-7 (MuonOS#313) fixed their reviews. OS-6 did too, earlier. OR-1, OR-2 and Moonraker#27 are merged. MR-1/2/4/7/9, OS-1, OS-5, UI-1 and FL-1/8/9 haven't yet answered the 04:40 reviews.
 
 ## Decisions needed from the owner
 
@@ -17,7 +17,7 @@ Agents: the coordinator can't receive messages from you. Tell it where you are b
 ## Merge order
 
 - **Moonraker:** #27 (merged 25 Sep) → MR-1 #22 → MR-9 #23 → MR-2 #24 → MR-4 #26 (needs MR-2's clock). MR-7 #28 goes after #22. **#25 goes before any MuonOS PR that adds the routes it floors.**
-- **MuonOS pin bump:** one PR bumps the Moonraker pin past #25 and #22 and, in the same change, adds every new floor entry to `EXPECTED_FLOOR` in `test_trusted_clients.py`, the `:80` vhost's 403 list and `test_floor.py` (02 §1). Nobody has opened it yet.
+- **MuonOS pin bump:** one PR bumps the Moonraker pin past #25 and #22 and, in the same change, adds every new floor entry to `EXPECTED_FLOOR` in `test_trusted_clients.py`, the `:80` vhost's 403 list and `test_floor.py` (02 §1). [MuonOS#308](https://github.com/Muon-3D/MuonOS/pull/308) now bumps the pin to include SEC-8 (#21). If #25 merges into Moonraker first, #308 or the next bump must carry the floor pairing.
 - **MuonOS:** #313 (OS-7) waits for that pin bump. #314 (OS-5) also waits for a pinned Moonraker that writes the marker on migration, or every field unit's hotspot is forced on. #312 (OS-1) waits until the pinned Fluidd serves `/setup`. #316 is independent.
 - **MuonUI:** UI-1 #48 moves onto #31's branch, so it lands after #39 and #31.
 
@@ -30,7 +30,7 @@ Agents: the coordinator can't receive messages from you. Tell it where you are b
 | MR-1 | [#22](https://github.com/Muon-3D/Moonraker/pull/22) @ `d0cd6f2` | **Changes needed** | The marker change is done. **Still open from the first review:** region pass-through plus `region_confirmed` (blocking). **New:** migration must write the marker with `by: migrated`, a reset can be undone by the marker retry, drop the #174 fallback, take `hotspot` from `GET /wifi/ap/stations`, and the websocket Host check. The floor entry moved to #25. Lint passes; CI runs no pytest (144 local tests pass). |
 | MR-9 | [#23](https://github.com/Muon-3D/Moonraker/pull/23) @ `fd79d45` | Nearly there | Matches 02 §7. Map only "not answering" to 503, not a real Aux 500. Resolve the test-file conflict with #27. |
 | MR-2 | [#24](https://github.com/Muon-3D/Moonraker/pull/24) @ `97d4d99`, on #23 | **Changes needed** | Clock only from the hotspot; zones from `zone.tab`; apply `tz` even when the clock is refused; map Aux 422 to `invalid_timezone`; Keep must not store a null name. Its Aux time assumptions match OS-6. |
-| — | [#25](https://github.com/Muon-3D/Moonraker/pull/25) @ `254fc71` | **Changes needed** | The Moonraker half of OS-5/6/7's floor. Owns the floor entries. Change `/server/aux/setup/complete` to `/server/aux/setup`, add `/server/aux/time`, and add `check_floor` tests. |
+| — | [#25](https://github.com/Muon-3D/Moonraker/pull/25) @ `80d582d` | **Ready** | The Moonraker half of OS-5/6/7's floor. It now floors `/server/aux/setup`, `/server/aux/wifi/ap/auto_off` and `/server/aux/time`, with `check_floor` tests, and `master` is merged in. Lint passes. Merge it before the MuonOS PRs that add those routes. |
 | MR-4 | [#26](https://github.com/Muon-3D/Moonraker/pull/26) @ `3b88cbe` | **Changes needed** | **Blocking:** every successful update is recorded as `update_failed`, because it judges from update_manager's cached version. Also map `printer_busy`, keep following Aux after `OtaDeploy.update()` returns, and make the update check wait. |
 | — | [#27](https://github.com/Muon-3D/Moonraker/pull/27) (KAN-403) | **Merged** into `master` (`1a4be94`) | EndpointId in identity. #23 now resolves its test-file conflict and pins `endpoint_id`. |
 | MR-7 | [#28](https://github.com/Muon-3D/Moonraker/pull/28) @ `cbc641c` | **Changes needed** | **Blocking (motion safety):** a paused print isn't busy, and the self-test can run before the clips are confirmed. The "Finish setup" card loses `ready`. Re-check the macro at `start`. |
@@ -41,7 +41,7 @@ Agents: the coordinator can't receive messages from you. Tell it where you are b
 | Package | PR | State | Notes |
 |---|---|---|---|
 | OS-1 | [#312](https://github.com/Muon-3D/MuonOS/pull/312) @ `6be52c5` | **Changes needed** | `main` merged; the build is green. **Neither code request is done.** Isolation (D11) is now stated as properties in 03 §2: the printer routes nothing, IPv4 and IPv6, loaded before NM, backend-independent, never blocking `10.42.0.1`. Also pin `10.42.0.1` (a new test asserts the opposite), `ipv6.method=disabled` and AP client isolation. PR policy needs C3. |
-| OS-7 | [#313](https://github.com/Muon-3D/MuonOS/pull/313) @ `a54cc43` | Waiting on the pin bump | The marker matches 03 §7, and `main` is merged. The floor pairing correctly moved to the pin bump. #174 also persists `/var/lib/muon3d/setup`, under another file name; rename to `setup.toml` or have #174 drop its file. Tell #174. PR policy needs C3. |
+| OS-7 | [#313](https://github.com/Muon-3D/MuonOS/pull/313) @ `68782cc` | Waiting on the pin bump and C3 | The marker matches 03 §7. The persist file is now `setup.toml`, so it conflicts with #174's on purpose. Build, Checks and Contracts pass; PR policy needs C3. The floor pairing lands with the pin bump. |
 | OS-5 | [#314](https://github.com/Muon-3D/MuonOS/pull/314) @ `3d30868` | **Changes needed** | **Blocking:** Ethernet isn't an uplink, and H4 uses `ap-hotspot-requested`, a file older firmware left behind. Also clear the deadline under H1, and re-check the inputs at the end of each run. Its auto-off design and `GET /wifi/ap/stations` were adopted into 03 §1. |
 | OS-6 | [#315](https://github.com/Muon-3D/MuonOS/pull/315) @ `ff96635` | Code done; waiting on C3 | Every review item is fixed: the 20-year bound, failing closed, no `fake-hwclock`, the zone from `/etc/localtime`, and the 2026 floor. Checks and Contracts pass. The PR policy needs the C3 run. |
 | — | [#316](https://github.com/Muon-3D/MuonOS/pull/316) @ `a42c845` (KAN-403) | CI green | The Aux contract is re-recorded. Ready apart from the C3 run the PR itself promises. |
@@ -70,7 +70,7 @@ Build on these PRs rather than around them.
 | [Muon-3D/muon-link#24](https://github.com/Muon-3D/muon-link/pull/24): account link and orchestrator connection | ML-1, MR-5, and UI-3 P12 |
 | [Muon-3D/MuonUI#31](https://github.com/Muon-3D/MuonUI/pull/31) (draft): setup route, region picker and pre-join region prompt | UI-1 builds on its branch; UI-2 P4 and P7a; KAN-324 |
 | [Muon-3D/MuonUI#39](https://github.com/Muon-3D/MuonUI/pull/39): Aux Wi-Fi overhaul (KAN-339) | UI-2 |
-| [Muon-3D/MuonUI#47](https://github.com/Muon-3D/MuonUI/pull/47) and [Muon-3D/Moonraker#21](https://github.com/Muon-3D/Moonraker/pull/21): SEC-8 protection levels | 07 §3, where setup writes join the protected set |
+| [Muon-3D/MuonUI#47](https://github.com/Muon-3D/MuonUI/pull/47) and [Muon-3D/Moonraker#21](https://github.com/Muon-3D/Moonraker/pull/21): SEC-8 protection levels (**merged 25 Sep**) | 02 §3: post-setup writes refused to LAN and hotspot callers at Level 1 (MR-1); `link/start` joins `PROTECTED_PREFIXES` (MR-6) |
 | [Muon-3D/MuonOS#174](https://github.com/Muon-3D/MuonOS/pull/174) (draft): region routes | OS-2; its `/setup` routes and `setup.toml` are replaced by OS-7 |
 | [Muon-3D/MuonOS#300](https://github.com/Muon-3D/MuonOS/pull/300): hotspot `security_enabled` (KAN-376) | OS-5, FL-8 |
 | [Muon-3D/MuonOS#305](https://github.com/Muon-3D/MuonOS/pull/305): GATE-1 listener declarations | OS-1 |
@@ -112,6 +112,8 @@ No branches yet for MR-3, MR-5, MR-8, OS-2, OS-3, OS-4, OS-8, OS-9, OS-10, OS-11
   - **KAN-404:** the console host becomes `control.muon3d.com`. It has no DNS record until the KAN-414 cutover, so FL-2 defaults to `app.muon3d.com` until then, and FL-7 blacklists both hosts. The panel (P12) and phone page (S6) show the host of `remote.link.url` rather than a hard-coded name.
   - **KAN-405:** the console mints a 6-digit code valid for 600 s, limits failed claims and reissues a code after a decline (S4, 03 §6). LINK-3 needs the claiming client's own key, which the console doesn't send yet (KAN-415). Until it does, the authority fingerprint shown at `offer` doesn't satisfy LINK-3 (07 S3, 04 P12).
   - **KAN-402:** phase 2 Bluetooth uses Iroh_BLE inside muon-link instead of a separate GATT daemon. A BLE setup peer needs a new `bluetooth` caller class, reported by muon-link (BT-2) (03 §8, 10, 09).
+
+- **25 Sep 16:39: SEC-8 Level 1 and setup (Moonraker#21 merged).** When the printer is Protected and setup is `complete`, `muon_setup` refuses step writes from `lan` and `hotspot` callers with 403 `protected`. Before `complete`, setup stays open, and reads stay open. `muon_setup` checks this in its own caller check rather than through `PROTECTED_PREFIXES`. `/server/muon/link/start` does join `PROTECTED_PREFIXES` (MR-6). The phone page's S10 shows "Change Wi-Fi on its screen" (02 §3, 05 S10, 07 §3, 08, 10 MR-1 and MR-6).
 
 **Corrections to earlier notes here:**
 - MR-1's `/wifi/ap/stations` poll made one 404 per start, not one every 2 s.

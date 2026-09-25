@@ -64,5 +64,6 @@ Every error screen has **one primary action**. On the panel that is the press; o
 | `invalid_step` / `not_skippable` / `required_steps_pending` | Client bug | Log it, re-render from the state, and show nothing to the owner. |
 | `unsupported_language` | Client bug | Fall back to `en`. |
 | `interrupted` | An `op` was cut short by a power loss | "That step was interrupted. Try again." |
+| `protected` (HTTP 403, `"muon_setup: protected"`) | The printer is at SEC-8 Level 1, setup is complete, and the caller is a LAN or hotspot browser | "{name} is protected. Change this on its screen." Use Fluidd's existing protection prompt where there is one. |
 | `aux_unavailable` | The Aux API isn't answering | "{name} is still starting up…" Retry every 3 s. After 60 s: "Something's wrong. Restart the printer." |
 | *(no response)* | A network error or timeout on a write | **Not an error.** "Reconnecting to {name}…" Wait for the state ([05-phone-setup-page.md §4](05-phone-setup-page.md#4-client-and-reconnect-rules)). After 30 s on the phone: "Check the printer's screen." |

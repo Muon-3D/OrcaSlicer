@@ -78,6 +78,12 @@ Any refused action returns HTTP 403 with the `ServerError` message `"muon_setup:
 
 `internal` callers (other components) may do everything except `reset`.
 
+**SEC-8 Level 1 (Moonraker#21, merged 25 Sep).** When `muon_floor.protection_level()` is Protected, and `state` is `complete`, refuse the step writes (`network`, `name`, `remote`, and a `ready` skip) with 403 to `lan` and `hotspot` callers, which have no identity in SEC-8's sense. The panel and internal calls are unaffected, and `remote` callers are read-only here anyway.
+- **Before `complete`, setup stays open at either level.** A printer in setup has no owner identity yet, and being on the hotspot is the trust model.
+- **Reads stay open.** Fluidd's card, discovery and the phone page need them.
+- **Don't add `/server/muon/setup` to `PROTECTED_PREFIXES`,** which would block reads and in-setup writes too. Check `muon_floor.protection_level()` in the caller check instead, and give the 403 the message `"muon_setup: protected"`.
+- **`/server/muon/link/start` goes into `PROTECTED_PREFIXES`** (MR-6), because starting a link is authority.
+
 **HTTP write hygiene (CSRF / DNS rebinding).** Refuse any HTTP `POST` in this component with 415 unless it has `Content-Type: application/json`. The one exception is `network/ca_cert`, which requires `multipart/form-data` instead. Refuse it with 403 if the `Host` header isn't one of these:
 
 - `10.42.0.1`
