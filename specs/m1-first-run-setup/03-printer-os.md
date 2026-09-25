@@ -32,19 +32,26 @@ Aux is published to Moonraker automatically: `aux_api_proxy` rebuilds `/server/a
 
 **The new policy.** Change `muon-ap-lifecycle.sh`:
 
+An **uplink** is `wlan0` **or** `eth0` connected. The **deadline** is the auto-off time in `/run/muon3d/ap/auto-off`.
+
 | Rule | When | AP |
 |---|---|---|
-| H1 | Setup isn't complete: the marker `/var/lib/muon3d/setup/complete` (§7) is missing | **Up**, whatever the owner-choice file says |
-| H2 | Setup is complete and `wlan0` isn't connected | **Up** (unchanged) |
-| H3 | Setup is complete, an uplink (`wlan0` or `eth0`) is connected, the auto-off deadline has passed, and `/home/printer_admin/ap-hotspot-kept-on` is absent | **Down** |
-| H4 | The owner turns it on (Settings › Add a phone or computer, or the hotspot card) | **Up**. This writes `ap-hotspot-kept-on`, a **new** file name, because pre-KAN-341 units may still have `ap-hotspot-requested`. Turning it off removes the file and writes `ap-hotspot-disabled`, as today. |
+| H1 | Setup isn't complete: the marker `/var/lib/muon3d/setup/complete` (§7) is missing | **Up**, whatever the owner-choice files say. Also remove any deadline, so a stale one can't take the hotspot down when setup finishes again in the same boot. |
+| H2 | Setup is complete and there is no uplink | **Up** |
+| H3 | Setup is complete, there is an uplink, no deadline is pending, and `/home/printer_admin/ap-hotspot-kept-on` is absent | **Down** |
+| H4 | The owner turns it on (Settings › Add a phone or computer, or the hotspot card) | **Up**. This writes `ap-hotspot-kept-on` and removes `ap-hotspot-disabled`. Turning it off removes `ap-hotspot-kept-on`, writes `ap-hotspot-disabled` and ends any pending deadline. |
 
-- **H3 changes KAN-341's default once setup is done.** It becomes "off while connected", which is the direction of MuonOS#193. Before setup, and after a factory reset, the default is on.
-- **New route `POST /wifi/ap/auto_off`** with `{ "after_s": 900 }`.
-  - Aux is unprivileged, so give it a sudo grant for a new helper, `/usr/libexec/muon3d/muon-ap-auto-off <seconds>`.
-  - The helper starts a transient timer, `systemd-run --on-active=<s> --unit=muon-ap-auto-off …`, which re-runs the lifecycle when it fires.
+- **Use `ap-hotspot-kept-on`, never `ap-hotspot-requested`.** Firmware from MuonOS#37 to #212 (9–14 Sep) wrote `ap-hotspot-requested` from `POST /wifi/ap/up`, and KAN-341 left those files behind. Reading that name would keep those printers' hotspots on for good. It stays ignored.
+- **H3 changes KAN-341's default once setup is done.** It becomes "off while connected", which is the direction of MuonOS#193. Before setup, and after a factory reset, the default is on. Reversing KAN-341's AP-4 needs its owner's agreement (Jack).
+- **Deadlines.** A deadline is pending after `finish` (`auto_off`, 900 s) and for 15 minutes after each boot, so an owner can always reach a freshly booted printer. **`ap-hotspot-disabled` skips the boot grace**, so an owner's "off" survives a reboot while there's an uplink.
+- **New route `POST /wifi/ap/auto_off`** with `{ "after_s": 900 }` returns `{ "after_s", "auto_off_at" }`.
+  - Aux writes the deadline, as seconds since boot, to `/run/muon3d/ap/auto-off` (tmpfs, `0750 aux_api` through tmpfiles). No sudo grant is needed. Seconds since boot, not wall-clock time, because the clock may be stepped by NTP or by the phone.
+  - A path unit re-runs the lifecycle when the file changes, and the lifecycle arms a transient timer (`systemd-run --on-active=<s>`) for the deadline.
   - It must be loopback-only. Moonraker#25 adds `/server/aux/wifi/ap/auto_off` to `FLOOR_PREFIXES`; the MuonOS pin bump adds it to the `:80` nginx 403 list and `EXPECTED_FLOOR`.
-- **Station count.** `muon_setup` reads it from `POST /wifi/ap/count`. Keep that route; MuonUI's contract uses it.
+- **What runs the lifecycle:** the dispatcher `20-ap-lifecycle` on `wlan0` **and `eth0`** events, the path unit, the deadline timer, and `muon-sta-watchdog.timer`.
+- **No lost triggers.** The lifecycle service is a oneshot, and systemd folds a path trigger that arrives during a run into that run. So at the end of each run, the script re-reads its inputs (the marker, the deadline file, the owner-choice files and the uplink state) and runs again if any changed. The result must not depend on the order in which the marker and the deadline are written. (`muon_setup` writes the marker first anyway: 02 §5.11.)
+- **Changing Wi-Fi after setup** (E5, S10): after any successful join once `state` is `complete`, `muon_setup` calls `auto_off` again, so the hotspot stays up long enough for the phone to see the result.
+- **Station count.** `GET /wifi/ap/stations` returns `{ "up", "count", "auto_off_at" }`, where `auto_off_at` is a Unix time computed from the time left, or `null`. `muon_setup` reads it for `state.hotspot`, including `hotspot.auto_off_at`, which only the OS knows after a reboot or an owner's "off". `POST /wifi/ap/count` stays for MuonUI's existing contract.
 - **Channel following.** Once the uplink associates, the hotspot moves to the uplink's channel, which can be 5 GHz or DFS. Phones that support 5 GHz follow it. Record in QA-1 how long the drop lasts.
 
 ## 2. Captive portal
@@ -171,16 +178,16 @@ Aux is published to Moonraker automatically: `aux_api_proxy` rebuilds `/server/a
 
 - There is no timezone handling.
 - `systemd-timesyncd` runs with Debian defaults.
-- `/etc/fake-hwclock.data` **isn't persisted**, so every boot starts from the image's baked time.
+- `/etc/fake-hwclock.data` **may not be persisted.** MuonOS's docs disagree (IN-DEVELOPMENT.md says a vendor recipe persists it; the Rugix audit says nothing does), so bench B8 checks it. If it isn't, every boot starts from the image's baked time.
 - There are no sudo grants for `timedatectl`, `date` or `fake-hwclock`.
-- The clock-before-TLS precondition is **KAN-198**.
+- The clock-before-TLS precondition is **KAN-270, prerequisite 2** ("Time sync has to become a precondition of an install"). KAN-198, the release-side signing, is done.
 
 **Routes (built in MuonOS#315, branch `feat/KAN-412-clock-and-time-zone`):**
 
 | Route | Does |
 |---|---|
-| `GET /time` | `{ "epoch_ms", "ntp_synced": true \| false \| null, "tz" }`. `tz` falls back to `UTC`. `null` means timedated didn't answer; treat it as not synced. |
-| `POST /time` `{ "epoch_ms" }` | Refuses with `409 ntp_synced` if `timedatectl show -p NTPSynchronized --value` is `yes`, and with `422 invalid_clock` for a time before the image build. Otherwise it runs `sudo -n date -u -s @<s>`, then `fake-hwclock save`. `503 clock_unavailable` if `date` fails. (`timedatectl set-time` isn't used: timedated refuses it while NTP is enabled.) |
+| `GET /time` | `{ "epoch_ms", "ntp_synced": true \| false \| null, "tz" }`. `tz` is the zone in effect (where `/etc/localtime` points), falling back to `UTC`. `null` means timedated didn't answer; treat it as not synced. |
+| `POST /time` `{ "epoch_ms" }` | Refuses with `409 ntp_synced` if NTP has synced. Ask `timedatectl show -p NTPSynchronized --value`; if timedated can't answer, fall back to `/run/systemd/timesync/synchronized`, and if neither can be read, **refuse** (fail closed). Refuses with `422 invalid_clock` for a time before the image build or more than 20 years after it. The build time is `/etc/muon3d/build.json`'s `created_at`, or 2026-01-01 if that can't be read (the same floor `muon_setup` uses). Otherwise it runs `sudo -n date -u -s @<s>`. `503 clock_unavailable` if `date` fails. (`timedatectl set-time` isn't used: timedated refuses it while NTP is enabled.) Drop `fake-hwclock save` and its sudo grant unless B8 shows `/etc/fake-hwclock.data` is persisted. |
 | `POST /time/zone` `{ "tz" }` | `422 invalid_timezone` unless the name is in the image's tzdata. Runs `sudo -n timedatectl set-timezone`. `503 timezone_unavailable` if that fails, or `503 timezone_not_kept` if the zone was applied but couldn't be saved. |
 
 Errors carry `detail: {code, message}`.
@@ -189,8 +196,7 @@ Errors carry `detail: {code, message}`.
 
 - It's kept in `/var/lib/muon3d/time/timezone`, persisted by its own `muon3d-time.toml`, and `muon3d-timezone.service` re-applies it early in every boot, before `muon_setup` starts.
 - Don't bind-mount `/etc/localtime`: `timedatectl` replaces that symlink with an atomic rename, which a bind mount breaks.
-- The sudoers entries are pinned to their argument shapes (`date -u -s @<10 digits>`, `fake-hwclock save`, `timedatectl set-timezone <zone>`). There's a row in `docs/privacy/data-inventory.md`.
-- `fake-hwclock save` does nothing across a reboot while `/etc/fake-hwclock.data` isn't persisted (01 §2.2).
+- The sudoers entries are pinned to their argument shapes (`date -u -s @<10 digits>`, `timedatectl set-timezone <zone>`). There's a row in `docs/privacy/data-inventory.md`.
 
 **The floor.** Aux's routes are mirrored at `/server/aux/time` and `/server/aux/time/zone`, which any LAN or remote client could otherwise call directly. `/server/aux/time` is floored: in Moonraker's `FLOOR_PREFIXES` (Moonraker#25, with the other OS routes only `muon_setup` may write) and in MuonOS's pin bump (02 §1). `muon_setup` reaches Aux through the in-process helper, so it's unaffected, and it accepts `clock` only from a hotspot caller (02 §3).
 
@@ -336,3 +342,4 @@ Errors come back as `409 {"error": "<sentence>"}`. Nothing is pushed, so callers
 | B5 | The AAAA answer from `address=/#/::` on the shipped dnsmasq | Dual-stack phones |
 | B6 | QR scan to page visible, and Start to Connected, over 10 runs each on iOS and Android | [01-flow.md §9](01-flow.md#9-timing-targets) |
 | B7 | Two phones on the hotspot with `wifi.ap-isolation=1`: can one reach the other? Also `nft list tables` (NM's firewall backend) and `ip -6 addr` on `ap0` after a client sends a router advertisement | S7, OS-1 |
+| B8 | `findmnt /etc/fake-hwclock.data`, and the clock after a power cycle with no network | 01 §2.2, OS-6 |

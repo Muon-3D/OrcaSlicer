@@ -23,7 +23,7 @@ Steps always run in this order. The panel's progress ring and the phone's "n of 
 | 1 | `language` | Yes | No | Never | A supported language code is saved | – |
 | 2 | `network` | No | Yes | Never | Wi-Fi is joined and has an IPv4 address, and the region is confirmed (§2.1). Or: Ethernet has an address and the owner accepts it. Internet access is **not** required. | The printer stays offline, and the hotspot stays on as the way in. A "Finish setup" card appears. |
 | 3 | `name` | No | "Keep" counts as done | Never | Keep or Rename | – (it can't end up skipped) |
-| 4 | `update` | No | Yes ("Later") | When this step becomes current: no internet, no update available, or the clock not synced (KAN-198) | The update is installed and the printer has rebooted into it | No card appears. The normal update notice covers it. |
+| 4 | `update` | No | Yes ("Later") | When this step becomes current: no internet, no update available, or the clock not synced (KAN-270) | The update is installed and the printer has rebooted into it | No card appears. The normal update notice covers it. |
 | 5 | `remote` | No | Yes ("Do this later") | Never | One of: `local` chosen; or `cloud` chosen and the link confirmed on the panel (muon-link phase `linked`). `self_hosted` isn't offered in phase 1. | Behaves as `local`. A "Link a Muon account" card appears. |
 | 6 | `ready` | No | Yes | Never | Every required item in the ready manifest is done ([04-panel.md §P13](04-panel.md#p13--ready-to-print-i)) | A "Before your first print" card appears. |
 | – | *finish* | – | – | – | – | `finish` marks setup `complete`. This is the "Done" screen, not a step. |
@@ -60,7 +60,7 @@ The region follows KAN-321 Rev 11, draft MuonOS#174 and draft MuonUI#31. Aux imp
 
 ### 2.2 Time zone and clock
 
-The M1 has no RTC. `/etc/fake-hwclock.data` isn't persisted, so **every boot starts from the image's baked time** until NTP (`systemd-timesyncd`) corrects it. The clock-before-TLS rule is KAN-198.
+The M1 has no RTC. Until NTP (`systemd-timesyncd`) corrects it, a boot starts from `fake-hwclock`'s saved time, or from the image's baked time if `/etc/fake-hwclock.data` isn't persisted (bench B8 checks which). Either way it can be weeks or years behind. The clock-before-TLS rule is KAN-270, prerequisite 2.
 
 - **Phone path.** When the owner taps **Start**, the page posts the phone's clock and IANA time zone. The time zone is then set, whatever the region.
 - **Panel path.** The clock comes from NTP after the join. The time zone depends on the declared country:

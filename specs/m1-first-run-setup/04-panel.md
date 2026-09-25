@@ -98,7 +98,7 @@ Screen letters A–J match the mockups on the design page. There is no P3: the s
   - the driver is `null`;
   - this screen hasn't been passed before.
 - **Hotspot SSID and key.** Use the same call the HOTSPOT card uses: `aux.ap.apShowCredentialsWifiApShowGet()`. On `:100`, nginx rewrites `/server/aux/wifi/ap/show` straight to Aux with `X-Muon-Local-UI: 1`. That header is the only way to get the key (07 S1). Never log the key or store it.
-- **The QR code depends on `setupStore.state.hotspot.clients`,** which `muon_setup` reads from Aux `POST /wifi/ap/count`:
+- **The QR code depends on `setupStore.state.hotspot.clients`,** which `muon_setup` reads from Aux `GET /wifi/ap/stations` (02 §6):
 
   | State | QR | Text |
   |---|---|---|

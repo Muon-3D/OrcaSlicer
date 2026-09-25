@@ -39,7 +39,7 @@ These work packages are sized for one agent or one PR each. Every package names 
 | OS-2 | Region, on draft #174: stable `detail.code` values from the agent's `OUTCOMES`; `SET_COUNTRY_TIMEOUT_S` under 60 s; a concurrency guard returning `busy`; channels per configuration in `/region/options`. **Blocked for real devices until signing keys and tokens exist** (KAN-321, KAN-132). | #174 merged | Aux tests pass; R2 and R9 pass on the bench |
 | OS-3 | Wi-Fi: W1 (replacing a saved secret is #210; `hidden` needs `nmcli connection add`), W2 (stable error codes), W5 (`/wifi/uplink`, with the internet check from Nexigon `check_connectivity()`), W6 (`/wifi/saved` is #210) | #210 | Aux tests pass |
 | OS-4 | Enterprise: W3 (an `eap` connect through a new privilege path, D-Bus/polkit or `nmcli connection add`) and W4 (`/wifi/ca_cert`, plus a persist declaration and inventory rows for `/etc/NetworkManager/certs`). The largest OS item; it can ship after phase 1 without blocking anything. | OS-3 | R6 passes against N6 |
-| OS-5 | Hotspot rules H1–H4 in `muon-ap-lifecycle.sh`, with the new `ap-hotspot-kept-on` marker; `POST /wifi/ap/auto_off` through a sudo-granted helper that starts a transient systemd timer; floor entries in both lists | OS-7 (H1 reads the marker) | H1–H4 verified on a dev unit; R8 passes |
+| OS-5 | Hotspot rules H1–H4 in `muon-ap-lifecycle.sh` (03 §1): an uplink is `wlan0` or `eth0`, the `ap-hotspot-kept-on` marker, H1 clearing the deadline, the boot grace that `ap-hotspot-disabled` skips, and the end-of-run re-check; `POST /wifi/ap/auto_off` writing a boot-relative deadline to `/run/muon3d/ap/auto-off`, with a path unit and a transient timer; `GET /wifi/ap/stations`. Floor entries: Moonraker#25, then the MuonOS pin bump. **Don't merge until the pinned Moonraker writes the marker on migration** (02 §4), or every field unit's hotspot is forced on. | OS-7 (H1 reads the marker); MR-1 migration marker | H1–H4 verified on a dev unit, including Ethernet only; R8 passes |
 | OS-6 | Time: `GET/POST /time` and `POST /time/zone` with pinned sudoers entries; the time zone kept in `/var/lib/muon3d/time/timezone` (`muon3d-time.toml`), re-applied by `muon3d-timezone.service`; a data-inventory row. `/server/aux/time` floored (02 §1). | – | Aux tests pass; the time zone survives a reboot |
 | OS-7 | The setup marker: **MuonOS `feat/KAN-413-setup-marker`**. `GET`, `POST` and `DELETE /setup/complete` over `/var/lib/muon3d/setup/complete`; `muon3d-setup.toml`; rows in ID-9 and the data inventory. The floor pairing lands with the Moonraker pin bump past Moonraker#25 (02 §1): `EXPECTED_FLOOR` in `test_trusted_clients.py`, the 403 location in `fluidd.nginx.template`, and `FLOOR_CASES` in `test_floor.py`. Accepts `by: migrated`. #174 drops its own `setup_routes.py`/`setup.toml`, or rebases onto this. | – | `test_setup_marker.py`, `test_persisted_paths.py` and the ID-9 test pass; the marker survives an OTA update |
 | OS-8 | Ship `/usr/share/muon/setup/ready.json`, with the hardware team, and the `MUON_SELF_TEST` macro if they want one | Hardware team decision | `ready.json` validates in MuonOS CI with Moonraker's manifest validator (an invalid file silently falls back to the default) |
@@ -97,7 +97,7 @@ These work packages are sized for one agent or one PR each. Every package names 
 
 | ID | Package | Depends on |
 |---|---|---|
-| QA-1 | Bench measurements B1–B7 (03 §9), **early**: they may change the phone copy and timeouts | OS-1, OS-5, a dev build with MR-1/MR-3 |
+| QA-1 | Bench measurements B1–B8 (03 §9), **early**: they may change the phone copy and timeouts | OS-1, OS-5, a dev build with MR-1/MR-3 |
 | QA-2 | The full bench matrix R1–R16 and the phase 1 acceptance checklist (09 §4) | Everything in phase 1 |
 
 ## 3. Order and parallel work
@@ -106,7 +106,7 @@ These work packages are sized for one agent or one PR each. Every package names 
 Week-ish 1   MR-1 ─────────┐   OS-11 (urgent)  OS-7  OS-1  OS-6  ML-1  UI-0   FL-7 FL-8 FL-9  OR-1
              (contract)    │
 Week-ish 2   MR-2 MR-4 MR-7│  OS-5  OS-3(#210) OS-2(#174) ─▶ MR-3   MR-6(#20) ─▶ MR-5   MR-8 MR-9
-             UI-1  FL-1  (against fixtures)            QA-1 (B1–B7 on a dev build)
+             UI-1  FL-1  (against fixtures)            QA-1 (B1–B8 on a dev build)
 Week-ish 3   UI-2  FL-3  (against the real API)   UI-3  FL-4  FL-2(+CON-1)  OS-4  OR-2
 Week-ish 4   UI-4  FL-5  UI-5  FL-6   OS-8  OS-9
 Then         QA-2 → phase 1 done
@@ -140,10 +140,10 @@ Then         QA-2 → phase 1 done
 | KAN-364 / NET-3 | MR-8, and the discovery merge in FL-4 |
 | KAN-376 Fluidd hotspot card | Overlaps FL-8 |
 | KAN-326 Hotspot band pin | A prerequisite of OS-5 |
-| KAN-329 Bench measurements | QA-1 and QA-2 (B1–B7, R1–R17) |
+| KAN-329 Bench measurements | QA-1 and QA-2 (B1–B8, R1–R17) |
 | KAN-339 Wi-Fi refactor | OS-3 (W6 `/wifi/saved`, MuonOS#210) |
 | KAN-330 Installed base | The migration rule (01 §7) keeps fielded units out of setup; KAN-330's region prompt stays separate |
-| KAN-198 Clock before TLS | The clock rules (01 §2.2) and OS-6 |
+| KAN-270 prerequisite 2, clock before TLS | The clock rules (01 §2.2) and OS-6 |
 | KAN-378 Diagnostic bundle | The "Save a diagnostic bundle" action after repeated region failures |
 | SEC-8 Level 1 | Add `/server/muon/setup/*` writes and `/server/muon/link/start` to the protected set (07 §3) |
 | New tickets needed | OS-11 (security), OS-1, OS-4, OS-6, OS-7, OS-10, ML-2, UI-0, MR-8, MR-9, FL-2, FL-4, FL-6–FL-9, CON-1; a follow-up for `aux_api_proxy` to retry its spec fetch in the background |
