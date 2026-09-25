@@ -381,7 +381,7 @@ MuonOS ships the manifest at `ready_manifest` (`/usr/share/muon/setup/ready.json
 
 | Endpoint | Body | Effect |
 |---|---|---|
-| `POST /server/muon/setup/driver` | `{ "rev": n, "kind": "panel"\|"phone"\|"web", "client_id": "<uuid>" }` | Claims the driver. Calling it again with the same `client_id` renews the claim. It does **not** change `rev`, so the phone can renew every 10 s without causing `stale_rev`. |
+| `POST /server/muon/setup/driver` | `{ "rev": n, "kind": "panel"\|"phone"\|"web"\|"app", "client_id": "<uuid>" }` | Claims the driver. Calling it again with the same `client_id` renews the claim. It does **not** change `rev`, so the phone can renew every 10 s without causing `stale_rev`. `app` is the Muon3D phone app, on the hotspot or the LAN. The kind only chooses the panel's words (04 P8). Permissions come from the caller kind (§3), never from the driver kind. |
 | `POST /server/muon/setup/goto` | `{ "rev": n, "step": "network" }` | Moves the cursor ([01-flow.md §3](01-flow.md#3-state-model)). An invalid target gives `invalid_step`. |
 | `POST /server/muon/setup/skip` | `{ "rev": n, "step": "network"\|"update"\|"remote"\|"ready" }` | Marks the step `skipped`. `language` gives `not_skippable`. |
 | `POST /server/muon/setup/finish` | `{ "rev": n }` | Requires `language` to be `done`, otherwise `required_steps_pending`. Remaining `pending` optional steps become `skipped`. Then `state = complete`, the marker is written, `muon_setup:complete` fires, and the hotspot auto-off is scheduled ([03-printer-os.md §1](03-printer-os.md#1-hotspot-lifecycle)). |
@@ -432,6 +432,7 @@ MuonOS ships the manifest at `ready_manifest` (`/usr/share/muon/setup/ready.json
 
 - `source` is the caller kind (§3), or `migrated`.
 - `hotspot.clients` is the number of associated stations on `ap0`. The panel uses it to switch its QR code ([04-panel.md §P2](04-panel.md#p2--here-or-on-a-phone-a)). Poll Aux every 2 s while `state != complete` and the hotspot is up, and notify only when the count changes.
+- `driver.kind` is `panel`, `phone`, `web` or `app`, and `bluetooth` in phase 2.
 - `driver.lapsed` is computed on read as `now - renewed > driver_lease`.
 
 ## 7. Identity and discovery changes in `aux_api_proxy`
@@ -450,6 +451,7 @@ Add `tests/test_muon_setup.py` with fakes for `database`, `aux_api_proxy` and `k
 3. `rev`:
    - A write with an old `rev` gives `stale_rev` plus the current state.
    - A driver renewal doesn't change `rev`.
+   - A driver claim with `kind: "app"` from a hotspot caller and from a LAN caller is stored as `app`, and gets the same access as `phone` and `web` from that caller.
 4. `op`: a second write during a `join` gives `busy`, and `network/cancel` clears it.
 5. Join mapping: every Aux failure reason in [03-printer-os.md §4](03-printer-os.md#4-wi-fi-join) maps to the right `code`, and on failure the profile-delete call is made.
 6. Secrets: after a join, no `psk` or password appears in the stored state, the events or the log records (use `caplog`).

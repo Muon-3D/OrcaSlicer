@@ -13,6 +13,7 @@ Each work package lists its own unit tests. This file collects them, adds the en
 | MuonOS / Aux | Tests for the new routes (`/wifi/ap/auto_off`, `/wifi/uplink`, `/wifi/saved`, `/wifi/ca_cert`, `/time*`, `/setup/complete`, `/region/suggest`), W2 error-code mapping, and a secret-logging test over `nmcli_gate.py` | The repo's pytest | [03](03-printer-os.md) |
 | MuonOS image | Config checks: the dnsmasq drop-in is present; the nginx config passes `nginx -t`; `/var/lib/muon3d/setup` is in Rugix persist; no new listener shows up in GATE-1's `network.listeners-declared` | The image CI (`scripts/check-production-hardening.sh` and DevTools checks) | [03 §2](03-printer-os.md#2-captive-portal) |
 | OrcaSlicer | Build on all three platforms, plus the manual checks | `./build_linux.sh -s` etc. | [06 §3](06-add-printer.md#3-orcaslicer) |
+| Muon3D app (`Muon-3D/muon3d-app`, KAN-390) | Tests next to the Wi-Fi QR parser and the hotspot join module. They give a QR code with a known key, then check that the key isn't in any log call, stored value, network request or rendered text, and that the join call is the only place it goes (07 S12). They also check that a driver claim sends `kind: "app"`. | `npm run check` | [07 S12](07-security.md#1-rules), R17 |
 
 ## 2. End-to-end test with a mock printer (Fluidd)
 
@@ -79,6 +80,7 @@ Record the results in KAN-329. Each row is run from a factory-fresh unit. KAN-35
 | R14 | Add printer from app.muon3d.com (https) | Opens at "What does your printer's screen show?". Each answer leads to the right next step. |
 | R15 | Add printer from the printer's own Fluidd (http) with a new M1 and a set-up M1 on the LAN | Badges show "Needs setup" and "Ready", and routing is correct |
 | R16 | OrcaSlicer Browse with the same two printers, after MR-8 | Both are listed with their status. The empty-state help appears when both are off. |
+| R17 | The Muon3D app path on an iPhone and on a Pixel, N1, once the app has setup screens (KAN-390) | The app joins the hotspot from the panel's Wi-Fi QR code, and the panel shows "Setting up from the Muon3D app". Setup reaches Connected and the phone returns to its usual Wi-Fi. The hotspot key isn't in the device log (Console.app on iOS, `adb logcat` on Android), the app's stored data, its crash reports, or its network traffic to any host (07 S12). |
 
 ## 4. Acceptance by phase
 

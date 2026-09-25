@@ -103,7 +103,7 @@ Screen letters A–J match the mockups on the design page. There is no P3: the s
   |---|---|---|
   | No station | Wi-Fi join (§5) | "Set up with your phone" / "Scan with the camera" |
   | A station, no phone driver | `http://10.42.0.1/setup` | "Phone connected" / "If the page didn't open, scan this" |
-  | A phone claims the driver | – | Go to P8 |
+  | A phone, a computer or the Muon3D app claims the driver | – | Go to P8 |
 
 - **Items:**
   - **Set up here** (focused) claims `driver=panel`.
@@ -175,8 +175,15 @@ This follows KAN-321 Rev 11 and #31: the region comes from the network the print
 
 ### P8 · Following a phone (F)
 
-- **Shown while** `driver.kind` is `phone` or `web` and the claim hasn't lapsed.
-- **Content:** "Setting up from a phone" (or "from a computer"), then "<Step> · step n of N", with `ArcProgress`.
+- **Shown while** `driver.kind` is `phone`, `web` or `app` and the claim hasn't lapsed.
+- **Content:** the title for the driver kind, then "<Step> · step n of N", with `ArcProgress`:
+
+  | `driver.kind` | Title |
+  |---|---|
+  | `phone` | "Setting up from a phone" |
+  | `web` | "Setting up from a computer" |
+  | `app` | "Setting up from the Muon3D app" |
+
 - **Operations:** an `op`'s progress shows here too, and a join result shows for 5 s.
 - **Continue here** claims `driver=panel`.
 - **Lapsed** (after 30 s): add "The phone went quiet".
@@ -283,7 +290,7 @@ The app fallback copy points here: "Press the knob, then open Settings › Link 
 
 | Test | Covers |
 |---|---|
-| `src/helpers/setupScreen.spec.ts` | Every screen, including P7a and P7b. The region variants: `locked`, `none`, and `regionPromptFor` returning `join`, `offer-switch` or `locked`. Also a lapsed driver, an `op` during P8, and the Home item. |
+| `src/helpers/setupScreen.spec.ts` | Every screen, including P7a and P7b. The region variants: `locked`, `none`, and `regionPromptFor` returning `join`, `offer-switch` or `locked`. Also a lapsed driver, an `op` during P8, P8's title for each of `phone`, `web` and `app`, and the Home item. |
 | `src/stores/setupStore.spec.ts` | With `src/test/fakeWebSocket.ts`: notifications are applied, `rev` ordering holds, and the store re-fetches on reconnect. |
 | `src/helpers/setupQr.spec.ts` | Wi-Fi escaping, and that the PSK is never logged. |
 | Keyboard set spec | The "use phone" key keeps the buffer. |

@@ -95,7 +95,7 @@ step.status:   pending ──▶ done ──(value changed later)──▶ done
 - **`op`** is the long-running operation in flight: `region_apply`, `join`, `update_install`, `link` or `ready_item`.
   - While an `op` runs, every write except that `op`'s own cancel returns `busy`.
   - An `op` cut short by a power loss is marked failed with `interrupted` at the next boot. `update_install` is the exception: it follows the OTA rules.
-- **`driver`** is who is in charge: `panel`, `phone`, `web` or `bluetooth` (phase 2).
+- **`driver`** is who is in charge: `panel`, `phone`, `web`, `app` (the Muon3D phone app) or `bluetooth` (phase 2).
   - It's advisory. Any allowed writer may write, and a write from a surface that isn't the driver makes that surface the driver.
   - Every write carries the state's `rev`. A write with an old `rev` gets `stale_rev` and the current state, so two screens can't overwrite each other without knowing.
   - The phone renews its claim every 10 s. The panel treats a claim older than 30 s as lapsed.

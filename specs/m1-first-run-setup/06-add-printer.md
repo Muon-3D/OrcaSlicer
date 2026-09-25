@@ -1,6 +1,6 @@
 # 06 · "Add printer" in every app
 
-Every app has exactly one entry point, **Add printer**. The apps are the printer's own Fluidd, app.muon3d.com and OrcaSlicer, and later the Muon app.
+Every app has exactly one entry point, **Add printer**. The apps are the printer's own Fluidd, app.muon3d.com and OrcaSlicer, and later the Muon3D phone app. The phone app follows the same routing table, but it shows setup on its own screens and claims `driver=app` instead of opening `/setup`.
 
 It detects what it can, then routes the owner to the right next step. When detection finds nothing, it asks "What does your printer's screen show?", because the panel always shows the next step. No app ever stops at "No printers found".
 

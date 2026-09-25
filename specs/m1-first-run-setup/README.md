@@ -61,7 +61,7 @@ This folder specifies how a new Muon3D M1 gets from the box to its first print. 
 | [04-panel.md](04-panel.md) | MuonUI | The knob model, screens P1–P14, the ring keyboard, QR codes, tests |
 | [05-phone-setup-page.md](05-phone-setup-page.md) | Fluidd | The `/setup` route, screens S0–S10, the region line, the client and its reconnect rules, captive-window constraints, i18n, the dashboard card, tests |
 | [06-add-printer.md](06-add-printer.md) | Fluidd, OrcaSlicer | The routing table, `AddPrinterDialog`, app.muon3d.com, OrcaSlicer Bonjour and profile changes, the future app |
-| [07-security.md](07-security.md) | Everyone | Rules S1–S11, the access summary, known gaps, privacy notes |
+| [07-security.md](07-security.md) | Everyone | Rules S1–S12, the access summary, known gaps, privacy notes |
 | [08-errors.md](08-errors.md) | UI authors | Every error code with its copy and actions |
 | [09-testing.md](09-testing.md) | Everyone, QA | Automated suites by repo, the E2E mock, the bench matrix, acceptance checklists |
 | [10-work-plan.md](10-work-plan.md) | Leads, agents | Rules for agents, packages MR/OS/ML/UI/FL/CON/OR/QA, order, phase 2, Jira mapping |
@@ -86,7 +86,7 @@ This folder specifies how a new Muon3D M1 gets from the box to its first print. 
 | Aux API | MuonOS's privileged FastAPI service on `127.0.0.1:6789`, proxied by Moonraker at `/server/aux/*`. |
 | `muon_setup` | The new Moonraker component that owns setup state (02). |
 | Cursor | The step the owner is on. |
-| Driver | The surface currently in charge: `panel`, `phone`, `web` or `bluetooth`. |
+| Driver | The surface currently in charge: `panel`, `phone`, `web`, `app` or `bluetooth`. |
 | `op` | A long-running operation: `region_apply`, `join`, `update_install`, `link` or `ready_item`. |
 | `rev` | The state revision, used for optimistic concurrency between screens. |
 | Market token | A signed file on config partition `p1` that lists the region configurations a unit may use (KAN-321 Rev 11). |
