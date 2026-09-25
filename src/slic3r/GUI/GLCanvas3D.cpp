@@ -2243,7 +2243,12 @@ void GLCanvas3D::_render_scene(const Camera& camera, const Size& cnv_size)
         // Depth pass for object-on-object and self shadows; consumed by the gouraud shader below.
         _render_shadows(camera.get_view_matrix(), camera.get_projection_matrix());
         _render_objects(GLVolumeCollection::ERenderType::Opaque, !m_gizmos.is_running());
-        if (!no_partplate)
+        // Collision previews follow the same visibility rule as the bed.
+        const bool show_exclusion_intersections = m_show_bed &&
+            (!m_main_toolbar.is_enabled() ||
+             (gizmo_type != GLGizmosManager::FdmSupports && gizmo_type != GLGizmosManager::Seam &&
+              gizmo_type != GLGizmosManager::MmSegmentation && gizmo_type != GLGizmosManager::FuzzySkin));
+        if (show_exclusion_intersections)
             wxGetApp().plater()->get_partplate_list().render_exclusion_volume_intersections(
                 camera.get_view_matrix(), camera.get_projection_matrix());
         _render_sla_slices();
