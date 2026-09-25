@@ -4,7 +4,7 @@ This page tracks the work packages in [10-work-plan.md](10-work-plan.md). The co
 
 Agents: the coordinator can't receive messages from you. Tell it where you are by pushing branches and opening PRs whose titles start with the package ID. Put questions in the PR body under **Spec questions**. **Link the spec commit you built against** (10 §1 rule 7). Several PRs were built on the first version (`42e8d51`) and have to catch up: check the log at the end of this page and [fixtures/README.md](fixtures/README.md).
 
-**Last updated:** 25 Sep 2026, 13:31 UTC. Review comments went out on 16 PRs at about 04:40; since then no package agent has pushed or replied. Moonraker#27 merged, MuonOS#316 re-recorded its contract, and the WS-13 decisions (OrcaSlicer#6) are in the spec.
+**Last updated:** 25 Sep 2026, 14:35 UTC. OR-1 and OR-2 merged into OrcaSlicer `main`, and Moonraker#27 into `master`. OS-6 fixed everything in its review. The other package agents haven't yet answered the 04:40 reviews. The WS-13 decisions (OrcaSlicer#6) are in the spec.
 
 ## Decisions needed from the owner
 
@@ -43,7 +43,7 @@ Agents: the coordinator can't receive messages from you. Tell it where you are b
 | OS-1 | [#312](https://github.com/Muon-3D/MuonOS/pull/312) @ `6be52c5` | **Changes needed** | `main` merged; the build is green. **Neither code request is done.** Isolation (D11) is now stated as properties in 03 §2: the printer routes nothing, IPv4 and IPv6, loaded before NM, backend-independent, never blocking `10.42.0.1`. Also pin `10.42.0.1` (a new test asserts the opposite), `ipv6.method=disabled` and AP client isolation. PR policy needs C3. |
 | OS-7 | [#313](https://github.com/Muon-3D/MuonOS/pull/313) @ `a54cc43` | Waiting on the pin bump | The marker matches 03 §7, and `main` is merged. The floor pairing correctly moved to the pin bump. #174 also persists `/var/lib/muon3d/setup`, under another file name; rename to `setup.toml` or have #174 drop its file. Tell #174. PR policy needs C3. |
 | OS-5 | [#314](https://github.com/Muon-3D/MuonOS/pull/314) @ `3d30868` | **Changes needed** | **Blocking:** Ethernet isn't an uplink, and H4 uses `ap-hotspot-requested`, a file older firmware left behind. Also clear the deadline under H1, and re-check the inputs at the end of each run. Its auto-off design and `GET /wifi/ap/stations` were adopted into 03 §1. |
-| OS-6 | [#315](https://github.com/Muon-3D/MuonOS/pull/315) @ `02163a0` | **Changes needed** | **Blocking:** the clock accepts dates up to 2286. The NTP check fails open. Drop `fake-hwclock save` unless B8 shows the file is persisted. `date -s` and `/var/lib/muon3d/time` were adopted into 03 §3. |
+| OS-6 | [#315](https://github.com/Muon-3D/MuonOS/pull/315) @ `ff96635` | Code done; waiting on C3 | Every review item is fixed: the 20-year bound, failing closed, no `fake-hwclock`, the zone from `/etc/localtime`, and the 2026 floor. Checks and Contracts pass. The PR policy needs the C3 run. |
 | — | [#316](https://github.com/Muon-3D/MuonOS/pull/316) @ `a42c845` (KAN-403) | CI green | The Aux contract is re-recorded. Ready apart from the C3 run the PR itself promises. |
 
 ### Other repos
@@ -56,8 +56,8 @@ Agents: the coordinator can't receive messages from you. Tell it where you are b
 | FL-7 | [Fluidd#14](https://github.com/Muon-3D/Muon3D_Fluidd/pull/14) @ `d6d7970` | One addition | Matched the spec until KAN-404: the blacklist now needs `control.muon3d.com` as well as `app.muon3d.com`. |
 | FL-8 | [Fluidd#15](https://github.com/Muon-3D/Muon3D_Fluidd/pull/15) @ `97e60f4` | One fix | Never put the hotspot key in a Fluidd QR code (07 S1). Ships with MuonOS#300. |
 | FL-9 | [Fluidd#16](https://github.com/Muon-3D/Muon3D_Fluidd/pull/16) @ `edb5b29` | One fix | Over Iroh, non-2xx answers resolve as successes; fix `validateStatus`. The hardware check is still owed. |
-| OR-1 | [OrcaSlicer#3](https://github.com/Muon-3D/OrcaSlicer/pull/3) | In review | Matches the spec. "Check profiles" is red on `main` too. |
-| OR-2 | [OrcaSlicer#4](https://github.com/Muon-3D/OrcaSlicer/pull/4) | In review | Matches the spec. Linux and macOS pass. Windows fails on a deps cache miss, and Flatpak on a wxWidgets patch that no longer applies; neither is caused by this PR. |
+| OR-1 | [OrcaSlicer#3](https://github.com/Muon-3D/OrcaSlicer/pull/3) | **Merged** (25 Sep) | |
+| OR-2 | [OrcaSlicer#4](https://github.com/Muon-3D/OrcaSlicer/pull/4) | **Merged** (25 Sep) | Its Bonjour status column shows up once MR-8 publishes the `name` and `setup` TXT keys. |
 | Spec | [OrcaSlicer#5](https://github.com/Muon-3D/OrcaSlicer/pull/5) | Taken into the spec | KAN-399 `app` driver kind and KAN-400 rule S12. |
 | Spec | [OrcaSlicer#6](https://github.com/Muon-3D/OrcaSlicer/pull/6) | Taken into the spec | WS-13: `control.muon3d.com` (KAN-404), the link code (KAN-405), Iroh_BLE for phase 2 (KAN-402). |
 
