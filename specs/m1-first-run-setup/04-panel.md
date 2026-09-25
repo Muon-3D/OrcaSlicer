@@ -223,9 +223,9 @@ P12 renders `remote.link`, which is muon-link's `LinkPhase` ([02-setup-api.md §
 - **`code`:**
   - The code in large mono digits, grouped in threes. Handle any length.
   - A QR of `remote.link.url`, exactly as given.
-  - "Scan, or enter it at / **control.muon3d.com**".
+  - "Scan, or enter it at / **<host>**", where `<host>` is the host of `remote.link.url`. Don't hard-code the console host: it is `app.muon3d.com` until the KAN-414 cutover and `control.muon3d.com` after it.
   - `ArcProgress` counts down to `expires_at`. `muon_setup` renews the code after that.
-- **`offer`:** a `Modal` with `weightedCommit`: "Link Walnut to / **jed@example.com**?", with the authority key's short form (`fingerprint`, shown as `9f3c 1a7b e2d0 4c11`) underneath (LINK-3).
+- **`offer`:** a `Modal` with `weightedCommit`: "Link Walnut to / **jed@example.com**?", with the authority key's short form (`fingerprint`, shown as `9f3c 1a7b e2d0 4c11`) underneath. **This doesn't satisfy LINK-3**, which needs the claiming client's own key (07 S3). KAN-415 adds that to the console and to `offer`; show it when the field exists, and don't invent it before then.
   - Focus starts on **Cancel**.
   - **Confirm** calls `POST /muon-link/link/confirm`, and **Cancel** calls `POST /muon-link/link/cancel`. Both go through the `:100` location added by OS-10; that's same-origin, so the CSP allows it.
 - **`linked`:** "Linked to jed@example.com".

@@ -327,7 +327,7 @@ This follows KAN-321 Rev 11 and MuonUI#31: the region comes from the network the
    {"phase":"unlinked"}
    {"phase":"connecting"}
    {"phase":"code","code":"482913","expires_at":1790251620,"url":"https://control.muon3d.com/link?code=482913"}
-   {"phase":"offer","account":"jed@example.com","authority":"Muon3D","fingerprint":"9f3c1a7be2d04c11"}
+   {"phase":"offer","account":"jed@example.com","authority":"Muon3D","fingerprint":"9f3c1a7be2d04c11"}  // the authority key; KAN-415 adds the client key (07 S3)
    {"phase":"linked","account":"jed@example.com","connected":true}
    {"phase":"failed","message":"could not reach the Muon3D service: …"}
    ```
