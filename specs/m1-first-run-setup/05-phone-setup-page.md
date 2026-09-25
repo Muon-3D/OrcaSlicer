@@ -8,7 +8,7 @@ The `/setup` page is the phone and computer renderer of the setup state machine.
 
 | File | What |
 |---|---|
-| `src/views/Setup.vue` | The route view. Lazy-loaded (`component: () => import('@/views/Setup.vue')`) so the rest of Fluidd doesn't load before it paints. |
+| `src/views/Setup.vue` | The route view, lazy-loaded (`component: () => import('@/views/Setup.vue')`). Fluidd's main entry still loads first, so what matters is the budget in §2. |
 | `src/components/muon-setup/*.vue` | One component per screen (S0–S9 below) plus `SetupShell.vue`, which holds the header, the progress bar, the reconnect banner and the language switcher. They are **not** auto-registered (`src/components/muon-setup` isn't in the unplugin dirs), so import them explicitly. |
 | `src/services/muon-setup/client.ts` | A standalone client: `fetch` for requests and its **own** `WebSocket` for `notify_muon_setup_changed`. It is independent of `Vue.$socket` and Vuex (§4). |
 | `src/services/muon-setup/state.ts` | `Vue.observable` store holding the latest state, connection status and local draft, the same pattern as `src/services/muon-cloud/state.ts`. |
@@ -38,7 +38,7 @@ The `/setup` page is the phone and computer renderer of the setup state machine.
   The page must therefore show every error itself. The loading shell is also skipped, because `v-app v-if="loading && !managedConsoleRoute"`. Update `src/router/__tests__/managed-path.spec.ts` to assert `/setup` is chrome-less and that the paths already listed keep their chrome.
 - **Route name.** Don't name the route `/onboarding`, because `managed-routes.spec.ts` asserts that name does not resolve.
 - **Redirects.** `printerIndependent: true` stops `main.ts:100-107` from redirecting to `/welcome`, and lets the view render before the socket connects.
-- **`init.ts:228-229`** sends every later `appInit()` to `/`. The setup page must never call `appInit`, `activateLocalPrinter` or `activateCloudPrinter`. "Open Walnut" (S8) is a plain link to `http://<host>/`, which loads the full app fresh.
+- **`init.ts:228-229`** sends every later `appInit()` to `/`. The setup page must never call `appInit`, `initCloud`, `activateLocalPrinter` or `activateCloudPrinter`. On `/#/setup` (and `/setup`), `main.ts` mounts at once and skips `appInit` and `initCloud`; otherwise `$mount` waits for `appInit`, and a stored cloud session makes the page call the console API. "Open Walnut" (S8) is a plain link to `http://<host>/`, which loads the full app fresh.
 - **Hotspot boot.** On the hotspot, `init.ts` probes `ws://10.42.0.1/websocket` and `:7125`. The first one wins quickly, so leave that as it is. The page doesn't wait for it: `Setup.vue` starts its own client in `created()`.
 - **Pretty URL.** nginx maps `GET /setup` to a `302` to `/#/setup`, which gives a short QR payload and portal redirect ([03-printer-os.md §2](03-printer-os.md#2-captive-portal)). The page accepts both forms.
 - **Page weight.** Setup must not pull in Monaco, three.js (`PrinterModel3d`), the G-code viewer or the Iroh WASM.
@@ -94,6 +94,7 @@ This follows KAN-321 Rev 11 and mirrors MuonUI#31 and panel screens P4 and P7a (
   2. "Where <language> is spoken" (`SPOKEN_IN`);
   3. "All countries", sorted by name, with a search box that filters `options.region.countries`. There's no free text.
 - **Confirm, or picking a country,** posts `region {country}`. The page then shows "Applying… Walnut's Wi-Fi will drop for about 8 seconds" and waits for the state, using the reconnect rules in §4.
+- **A failed apply.** When `network.region_error` is set, show its copy ([08-errors.md](08-errors.md)) above **Confirm** and **Change**. The page usually misses the write's own answer, because the apply drops the hotspot.
 - **Skipped entirely** in `locked` and `none` markets.
 
 **Market `none`.** A one-time notice at the top of S3: "This printer needs re-registering." Joining still works on channels 1–11.
@@ -139,7 +140,7 @@ export interface SetupClient {
   - The page does **not** show a failure. It shows "Reconnecting to Walnut…", keeps the screen, and waits for the next state.
   - If the state then shows the step done or an `op` running, it moves on.
   - If the state shows the step still `pending` with no `op`, it shows "That didn't reach Walnut. Try again."
-- **Driver renewal.** While `driver.client_id` is this page's ID and `document.visibilityState == "visible"`, post `driver` every 10 s. The `client_id` is a random UUID made at page load and kept in `sessionStorage` when available.
+- **Driver renewal.** While `driver.client_id` is this page's ID and `document.visibilityState == "visible"`, post `driver` every 10 s. The `client_id` is a random ID made at page load from `crypto.getRandomValues` and kept in `sessionStorage` when available. Don't use `crypto.randomUUID`: it needs a secure context, and `http://10.42.0.1` isn't one.
 
 **The reconnect banner:**
 
@@ -148,7 +149,7 @@ export interface SetupClient {
 
 **Drafts.**
 
-- Keep the SSID, the security choice and the Enterprise identity in `sessionStorage`, guarded by try/catch, so a reload restores them.
+- Keep the SSID, the security choice and the Enterprise identity in `sessionStorage`, guarded by try/catch, so a reload restores them. Keep the local flags there too (`droveSetup`, `changingWifi`, `joinRev`), so a captive-window reload during a Wi-Fi change doesn't drop to S10.
 - **Never** store passwords.
 - Clear the draft on success.
 
@@ -163,10 +164,11 @@ Selection is a pure function, `screenFor(state, local) -> ScreenId`, in `src/ser
    - otherwise → S10.
 3. `op?.kind` is `region_apply` or `join` → S4. `op?.kind == "update_install"` → S5u.
 4. `driver?.kind == "panel" && !driver.lapsed && driver.client_id != local.clientId` → S9.
-5. The page hasn't claimed the driver yet → S1.
-6. Otherwise, by `cursor`:
+5. **This tab's join result.** `local.joinRev` is the `rev` of the state the page held when it posted Connect. While it's set, a later state (`rev > joinRev`) with no `op` whose join has **finished** → S4r, until the owner presses Continue, which clears `joinRev`. A join has finished when `network.addresses` is non-empty or `network.error` is set; `status == done` isn't the test, because in a picker market the step stays `pending` until the region is confirmed. This rule is needed because in `locked` and `none` markets, or when the declared country already equals the detected one, the cursor moves on straight after the join. It also stops an older network's success showing when the owner changes Wi-Fi on a complete state.
+6. The page hasn't claimed the driver yet → S1.
+7. Otherwise, by `cursor`:
    - `language` → S1 (unreachable after Start, which posts the language);
-   - `network` → S4r while the join has finished but `network.region_confirmed` is `false` (the region line), or while a result is still unacknowledged; otherwise S3;
+   - `network` → S4r with the region line when `network.addresses` is non-empty and `network.region_confirmed` is `false`. This shows on every phone tab, not only the one that joined; when the panel drives, it shows P7a and the page shows S9. Otherwise S3;
    - `name`, `update` or `remote` → S5, or S6 if `remote.mode == "cloud"`;
    - `ready` → S7;
    - `finish` → S8.

@@ -52,7 +52,7 @@ Every error screen has **one primary action**. On the panel that is the press; o
 
 | Code | When | Copy | Primary / secondary |
 |---|---|---|---|
-| `self_test_failed` | The macro returned an error | "The self-test found a problem: {detail}" | Try again / Skip |
+| `self_test_failed` | The macro returned an error | "The self-test found a problem: {detail.gcode_error}" | Try again / Skip |
 | `printer_not_ready` | Klippy isn't ready | "The printer isn't ready yet. Try again in a moment." | Try again |
 
 ## 5. Flow and transport

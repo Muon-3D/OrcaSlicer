@@ -15,6 +15,7 @@ They are **illustrative**:
 | `state.04-joining.json` | `op.kind = join`, `phase = dhcp`. |
 | `state.04b-region-confirm.json` | Joined HomeWiFi. `region.detected_country = GB` (`basis: joined-network`) and `network.region_confirmed = false`, so the region line shows. |
 | `state.04c-region-apply.json` | Confirm was pressed. `op.kind = region_apply`, and Wi-Fi and the hotspot drop for about 8 s. |
+| `state.04d-region-apply-failed.json` | The region apply failed. `op` is cleared, `network.region_error.code = region_apply_failed`, nothing was declared, and the region line shows again with the error. |
 | `state.05-network-wrong-password.json` | The join failed with `wrong_password` at `authenticating`. |
 | `state.06-remote-link-code.json` | The network is done with internet, the update is skipped, and remote is `cloud` with a live code. |
 | `state.07-ready-self-test.json` | Linked. The panel drives `ready`, and `self_test` is running. |
@@ -25,3 +26,12 @@ They are **illustrative**:
 | `options.none.json` | No valid token (`countries: []`), which is every unit today. |
 | `networks.eu-unit.json` | Scan results: a network on ch 13, an Enterprise network, and an unsupported WEP network. |
 | `networks.us-locked-unit.json` | The same air as seen by a US unit. The ch 13 network has `channel_permitted: false`. |
+
+## Changes
+
+Copy the fixtures again whenever this log changes, and check the spec commit your PR links.
+
+| When (UTC) | Change |
+|---|---|
+| 24 Sep, 15:40 | `state.03-region-apply.json` replaced by `state.04b-region-confirm.json` and `state.04c-region-apply.json`: the region is confirmed after the join. `region` became Aux `GET /region` as-is plus `market`; `options.region` became Aux `GET /region/options` as-is; `remote.link` became muon-link's `LinkPhase`. |
+| 25 Sep, 04:50 | `region` gained `explanation` and `enforcement` (every field of Aux `GET /region`). `steps.network` gained `region_error`. New `state.04d-region-apply-failed.json`. The `ready_item` op in `state.07` is now `{item, phase: "running", progress: null}`. `driver.kind` may be `app` (KAN-399). |

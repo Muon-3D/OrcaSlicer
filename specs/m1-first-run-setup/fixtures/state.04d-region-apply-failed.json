@@ -1,9 +1,15 @@
 {
   "version": 1,
-  "rev": 1,
-  "state": "new",
-  "cursor": "language",
-  "driver": null,
+  "rev": 11,
+  "state": "in_progress",
+  "cursor": "network",
+  "driver": {
+    "kind": "phone",
+    "client_id": "5b1f0c7e-9f7a-4f5e-8f0a-2d6f3c1a9b10",
+    "since": 1790251230.0,
+    "renewed": 1790251260.0,
+    "lapsed": false
+  },
   "op": null,
   "printer": {
     "name": "Walnut",
@@ -14,15 +20,15 @@
   "hotspot": {
     "up": true,
     "ssid": "Muon-walnut-8987",
-    "clients": 0,
+    "clients": 1,
     "auto_off_at": null,
     "address": "10.42.0.1"
   },
   "clock": {
     "synced": false,
-    "source": "fake_hwclock",
-    "tz": null,
-    "tz_source": null
+    "source": "phone",
+    "tz": "Europe/London",
+    "tz_source": "phone"
   },
   "region": {
     "market": "picker",
@@ -31,9 +37,9 @@
     "declared_country": null,
     "configuration": "de",
     "domain": "DE",
-    "surroundings": "unknown",
-    "detected_country": null,
-    "basis": null,
+    "surroundings": "offer",
+    "detected_country": "GB",
+    "basis": "joined-network",
     "enforcement": "unknown",
     "locked": false,
     "channels": [
@@ -66,20 +72,25 @@
   "card_dismissed": false,
   "steps": {
     "language": {
-      "status": "pending",
-      "value": null,
-      "source": null
+      "status": "done",
+      "value": "en",
+      "source": "panel"
     },
     "network": {
       "status": "pending",
-      "kind": null,
-      "ssid": null,
-      "addresses": [],
-      "hostname_local": null,
-      "internet": null,
+      "kind": "wifi",
+      "ssid": "HomeWiFi",
+      "addresses": [
+        "192.168.1.37"
+      ],
+      "hostname_local": "Muon-walnut-8987.local",
+      "internet": true,
       "error": null,
       "region_confirmed": false,
-      "region_error": null
+      "region_error": {
+        "code": "region_apply_failed",
+        "message": "region apply failed; nothing was declared"
+      }
     },
     "name": {
       "status": "pending",

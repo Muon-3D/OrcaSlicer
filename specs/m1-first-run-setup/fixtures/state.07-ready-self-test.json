@@ -12,10 +12,11 @@
   },
   "op": {
     "kind": "ready_item",
+    "item": "self_test",
     "id": "op_9",
     "started": 1790251660.0,
-    "phase": "self_test",
-    "progress": 0.4
+    "phase": "running",
+    "progress": null
   },
   "printer": {
     "name": "Walnut",
@@ -39,12 +40,14 @@
   "region": {
     "market": "picker",
     "reason": "declared",
+    "explanation": "Free English text from the region agent, for logs. Never parse or show it.",
     "declared_country": "GB",
     "configuration": "gb",
     "domain": "GB",
     "surroundings": "settled",
     "detected_country": "GB",
     "basis": "joined-network",
+    "enforcement": "unknown",
     "locked": false,
     "channels": [
       1,
@@ -90,7 +93,8 @@
       "hostname_local": "Muon-walnut-8987.local",
       "internet": true,
       "error": null,
-      "region_confirmed": true
+      "region_confirmed": true,
+      "region_error": null
     },
     "name": {
       "status": "done",

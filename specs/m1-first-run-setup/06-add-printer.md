@@ -16,6 +16,9 @@ This table covers every app. The first matching row wins.
 | A found printer has `setup == complete`, the owner is signed in, and the link phase is `unlinked`, `code` or `failed` | **Add**, and **Link to my account** (the existing LAN shortcut, `startLanLink`) |
 | Nothing found, or the page is https | "What does your printer's screen show?" (§3) |
 
+- `identity.setup == null` is firmware without `muon_setup`: treat it as `complete`.
+- A 503 from `/server/muon/identity` means Aux is still starting: retry.
+
 ## 2. Fluidd: `AddPrinterDialog`
 
 **Repo:** `Muon-3D/Muon3D_Fluidd`. **New file:** `src/components/muon-cloud/AddPrinterDialog.vue`. This folder isn't auto-registered, so import the component explicitly. Use `app-dialog`, which goes fullscreen on mobile.
@@ -68,7 +71,7 @@ find ──(pick a printer)──▶ setup redirect | add instance | link (code)
    - `complete` and linked to this account: **In your account**.
    - `complete`: **Ready**.
    - The link status text stays as it is today.
-5. **Hotspot banner.** If `location.hostname === '10.42.0.1'`, the banner in §1 sits above the list. Detect this by hostname, not with `useHotspotCheck`, which is broken; fixing it is FL-8 in the work plan.
+5. **Hotspot banner.** If `location.hostname === '10.42.0.1'`, the banner in §1 sits above the list. Use FL-8's `isHotspotOrigin()`, a pure same-origin check.
 
 ### 2.4 app.muon3d.com (https)
 

@@ -7,7 +7,7 @@
 
 Aux is published to Moonraker automatically: `aux_api_proxy` rebuilds `/server/aux/*` from `/openapi.json`. Any new route therefore appears there too.
 
-**The floor has two lists that must match.** The `:80` Fluidd server returns 403 for the floored Aux paths (`recipes/klipper_moonraker_fluidd/files/fluidd/fluidd.nginx.template:122-136`), and a test requires that list to equal Moonraker's `FLOOR_PREFIXES`. Every path added to the floor must be added in **both** repos.
+**The floor has two lists that must match.** The `:80` Fluidd server returns 403 for the floored Aux paths (`recipes/klipper_moonraker_fluidd/files/fluidd/fluidd.nginx.template:122-136`). `test_trusted_clients.py` requires `EXPECTED_FLOOR` to equal the pinned Moonraker's `FLOOR_PREFIXES` exactly and in order, and requires a `location ^~ … { return 403; }` for each entry. Every path added to the floor is added in **both** repos. The MuonOS half lands in the PR that bumps the Moonraker pin past the new entries, together with rows in `test_floor.py`'s `FLOOR_CASES` ([02 §1](02-setup-api.md#1-conventions-this-component-follows)).
 
 **Before you start:**
 
@@ -43,7 +43,7 @@ Aux is published to Moonraker automatically: `aux_api_proxy` rebuilds `/server/a
 - **New route `POST /wifi/ap/auto_off`** with `{ "after_s": 900 }`.
   - Aux is unprivileged, so give it a sudo grant for a new helper, `/usr/libexec/muon3d/muon-ap-auto-off <seconds>`.
   - The helper starts a transient timer, `systemd-run --on-active=<s> --unit=muon-ap-auto-off …`, which re-runs the lifecycle when it fires.
-  - It must be loopback-only. Add `/server/aux/wifi/ap/auto_off` to `FLOOR_PREFIXES` and to the `:80` nginx 403 list.
+  - It must be loopback-only. Moonraker#25 adds `/server/aux/wifi/ap/auto_off` to `FLOOR_PREFIXES`; the MuonOS pin bump adds it to the `:80` nginx 403 list and `EXPECTED_FLOOR`.
 - **Station count.** `muon_setup` reads it from `POST /wifi/ap/count`. Keep that route; MuonUI's contract uses it.
 - **Channel following.** Once the uplink associates, the hotspot moves to the uplink's channel, which can be 5 GHz or DFS. Phones that support 5 GHz follow it. Record in QA-1 how long the drop lasts.
 
@@ -62,11 +62,17 @@ Aux is published to Moonraker automatically: `aux_api_proxy` rebuilds `/server/a
 
 **OS-1 changes:**
 
-1. **Isolation.** In `dispatcher.d/10-ap-isolate`, reject all forwarding from `ap0`: to the internet, to the `wlan0` subnet and to any `eth0` subnet. Run it on `eth0` events too.
-   - Keep this out of `muon3d-firewall.nft`: `tests/test_firewall_ruleset.py` forbids forward hooks there, and its comment about "the hotspot's internet access" needs updating.
-   - Hotspot clients lose internet access, which today is incidental.
+1. **Isolation: the printer routes nothing.** The rule is defined by its properties, not a mechanism. It must:
+   - drop all forwarded traffic, IPv4 and IPv6. Nothing on the printer needs forwarding once the hotspot stops sharing the uplink, so this also stops the printer routing between `wlan0` and `eth0` (NetworkManager's shared mode turns IPv4 forwarding on for every interface);
+   - match on interfaces, not subnets, so it needs no `wlan0` or `eth0` events;
+   - be loaded before NetworkManager raises `ap0` at boot, and never be removed by a `down` event;
+   - not depend on NetworkManager's firewall backend. With the iptables backend, NM puts its own `-i ap0 -s 10.42.0.0/24 -j ACCEPT` at the top of FORWARD on every activation, ahead of a jump added with `-C || -I 1`;
+   - never block the hotspot's own access to `10.42.0.1` (DHCP, DNS, `:80`). The INPUT rule in `10-ap-isolate` matches the uplink subnet, so on a `10.0.0.0/8` uplink it rejects DNS, DHCP renewals and `:80` on the hotspot. Use `-m addrtype --dst-type LOCAL ! -d 10.42.0.1` (or the nft equivalent) instead.
+
+   The simplest way to get all of these is a `forward` chain with policy `drop` in `muon3d-firewall.nft`, which loads before NetworkManager. `tests/test_firewall_ruleset.py` forbids forward hooks there today to protect "the hotspot's internet access", which D11 removes, so update that test and the comments in `muon3d-firewall.nft` and `docs/connectivity/SPEC.md` AP-7. Update the `10-ap-isolate` tests that pin today's behaviour. Hotspot clients lose internet access, which today is incidental.
+   - **Client to client.** Traffic between two hotspot clients is bridged by the Wi-Fi firmware and never reaches FORWARD. Set `wifi.ap-isolation=1` in `ap0-con` (bench B7 checks brcmfmac honours it).
 2. **HTTPS fails fast.** Add `iifname "ap0" tcp dport 443 reject with tcp reset` to `muon3d-firewall.nft`, so HTTPS captive probes fail at once instead of timing out. A reject isn't a listener; check it against #305's rule that declared ports must equal allowed ports.
-3. **Pin `10.42.0.1`** in `ap0-con` (`ipv4.addresses=10.42.0.1/24`). It's NetworkManager's shared-mode default today, not pinned. Pinning it needs the same migration of persisted profiles that #174 uses.
+3. **Pin `10.42.0.1`** in `ap0-con` (`address1=10.42.0.1/24` under `[ipv4]`). It's NetworkManager's shared-mode default today, not pinned. Persisted profiles need migrating: `muon-ap-provision.sh` already edits the persisted profile before NetworkManager starts, so do it there (#174's `pin_hotspot()` is in a draft and can't be reused). In the same migration, set `ipv6.method=disabled` (with `auto`, the printer may accept router advertisements from a hotspot client) and `wifi.ap-isolation=1`. Say in the PR what happens on rollback.
 4. **DNS.** Add `/etc/NetworkManager/dnsmasq-shared.d/muon-captive.conf`:
 
    ```conf
@@ -84,7 +90,7 @@ Aux is published to Moonraker automatically: `aux_api_proxy` rebuilds `/server/a
        default                                        0;
        10.42.0.1                                      1;
        muon3d.local                                   1;
-       "~*^muon-[a-z]{4,7}-[0-9a-f]{4}(\.local)?$"    1;
+       "~*^muon-[a-z]+-[0-9a-f]{4}(\.local)?$"         1;
    }
    map "$server_addr:$muon_own_host" $muon_portal {
        default          0;
@@ -169,19 +175,24 @@ Aux is published to Moonraker automatically: `aux_api_proxy` rebuilds `/server/a
 - There are no sudo grants for `timedatectl`, `date` or `fake-hwclock`.
 - The clock-before-TLS precondition is **KAN-198**.
 
-**Routes to add:**
+**Routes (built in MuonOS#315, branch `feat/KAN-412-clock-and-time-zone`):**
 
 | Route | Does |
 |---|---|
-| `GET /time` | `{ "epoch_ms", "ntp_synced", "tz" }` |
-| `POST /time` `{ "epoch_ms" }` | Refuses with `409 ntp_synced` if `timedatectl show -p NTPSynchronized --value` is `yes`. Otherwise it runs `sudo -n timedatectl set-time @<s>`. |
-| `POST /time/zone` `{ "tz" }` | Validates against `/usr/share/zoneinfo` and runs `sudo -n timedatectl set-timezone`. |
+| `GET /time` | `{ "epoch_ms", "ntp_synced": true \| false \| null, "tz" }`. `tz` falls back to `UTC`. `null` means timedated didn't answer; treat it as not synced. |
+| `POST /time` `{ "epoch_ms" }` | Refuses with `409 ntp_synced` if `timedatectl show -p NTPSynchronized --value` is `yes`, and with `422 invalid_clock` for a time before the image build. Otherwise it runs `sudo -n date -u -s @<s>`, then `fake-hwclock save`. `503 clock_unavailable` if `date` fails. (`timedatectl set-time` isn't used: timedated refuses it while NTP is enabled.) |
+| `POST /time/zone` `{ "tz" }` | `422 invalid_timezone` unless the name is in the image's tzdata. Runs `sudo -n timedatectl set-timezone`. `503 timezone_unavailable` if that fails, or `503 timezone_not_kept` if the zone was applied but couldn't be saved. |
+
+Errors carry `detail: {code, message}`.
 
 **Persisting the time zone.**
 
-- Write it to `/var/lib/muon3d/setup/timezone`, and add a boot oneshot that applies it before `muon_setup` starts.
+- It's kept in `/var/lib/muon3d/time/timezone`, persisted by its own `muon3d-time.toml`, and `muon3d-timezone.service` re-applies it early in every boot, before `muon_setup` starts.
 - Don't bind-mount `/etc/localtime`: `timedatectl` replaces that symlink with an atomic rename, which a bind mount breaks.
-- Add sudoers entries for the exact commands, and a row in `docs/privacy/data-inventory.md`.
+- The sudoers entries are pinned to their argument shapes (`date -u -s @<10 digits>`, `fake-hwclock save`, `timedatectl set-timezone <zone>`). There's a row in `docs/privacy/data-inventory.md`.
+- `fake-hwclock save` does nothing across a reboot while `/etc/fake-hwclock.data` isn't persisted (01 §2.2).
+
+**The floor.** Aux's routes are mirrored at `/server/aux/time` and `/server/aux/time/zone`, which any LAN or remote client could otherwise call directly. `/server/aux/time` is floored: in Moonraker's `FLOOR_PREFIXES` (Moonraker#25, with the other OS routes only `muon_setup` may write) and in MuonOS's pin bump (02 §1). `muon_setup` reaches Aux through the in-process helper, so it's unaffected, and it accepts `clock` only from a hotspot caller (02 §3).
 
 ## 4. Wi-Fi join
 
@@ -279,21 +290,21 @@ Errors come back as `409 {"error": "<sentence>"}`. Nothing is pushed, so callers
 | Route | Does |
 |---|---|
 | `GET /setup/complete` | Returns `{ "complete", "completed_at", "by" }` |
-| `POST /setup/complete` `{ "by": "muon_setup" }` | Writes the marker. Idempotent: the first record is kept. |
-| `DELETE /setup/complete` | Clears the marker. Used only by `muon_setup`'s development `reset`. |
+| `POST /setup/complete` `{ "by": "muon_setup" \| "migrated" }` | Writes the marker. Idempotent: the first record is kept. `migrated` is for printers the migration check marks complete. |
+| `DELETE /setup/complete` | Clears the marker and returns `{ "complete": false, "completed_at": null, "by": null }`. Used only by `muon_setup`'s `reset`. |
 
 - **The marker** is `/var/lib/muon3d/setup/complete`. Its existence is the fact, so a damaged file still reads as complete; the hotspot lifecycle checks it with `[[ -e ]]`.
 - **Persisted** by `muon3d-setup.toml`. It survives OTA updates and rollback, and a factory reset removes it. KAN-413 adds the ID-9 and data-inventory rows.
-- **`muon_setup` writes it** with `POST /setup/complete` at `finish`. It reads `GET /setup/complete` only during the migration check ([01-flow.md §7](01-flow.md#7-printers-already-in-the-field)). Once `muon_setup` has its own state, that state is authoritative.
-- **The whole prefix `/server/aux/setup/complete` must be floored**, in **both** lists:
-  - Moonraker's `FLOOR_PREFIXES`;
-  - MuonOS `fluidd.nginx.template`'s 403 list, and `recipes/klipper_moonraker_fluidd/tests/test_floor.py`.
+- **`muon_setup` writes it** with `POST /setup/complete` at `finish` (`by: muon_setup`) and when migration marks a printer complete (`by: migrated`). It reads `GET /setup/complete` only during the migration check ([01-flow.md §7](01-flow.md#7-printers-already-in-the-field)). Once `muon_setup` has its own state, that state is authoritative.
+- **The whole prefix `/server/aux/setup` must be floored**, in **both** lists. Flooring `/server/aux/setup` rather than `/server/aux/setup/complete` also covers #174's `POST /setup` if it lands first, and anything added under it later:
+  - Moonraker's `FLOOR_PREFIXES`, added by Moonraker#25;
+  - MuonOS's `EXPECTED_FLOOR` in `test_trusted_clients.py`, a `return 403` location in `fluidd.nginx.template`, and a `FLOOR_CASES` row in `test_floor.py`, all in the MuonOS PR that bumps the Moonraker pin past #25. #313 must not merge before that.
 
   Without it, a LAN client could `DELETE` the marker through `aux_api_proxy`.
 - **#174 and MuonUI#31 overlap with this.**
   - #174 has its own `setup_routes.py` and `setup.toml` under the same `/setup` prefix. It must drop them, or rebase onto KAN-413.
   - MuonUI#31's `aux.setup.get()` and `aux.setup.complete()` calls go away (UI-1).
-- **Time zone.** `/var/lib/muon3d/setup/timezone` (OS-6) sits in the same persisted directory.
+- **Time zone.** OS-6 keeps it separately, in `/var/lib/muon3d/time/timezone` with its own `muon3d-time.toml`.
 
 **Factory reset** is `/usr/sbin/muon3d-factory-reset`, run as root from the console or SSH. It runs `rugix-ctrl state reset`, which clears everything persisted.
 
@@ -324,3 +335,4 @@ Errors come back as `409 {"error": "<sentence>"}`. Nothing is pushed, so callers
 | B4 | Android captive behaviour after a Wi-Fi QR join, on Pixel and Samsung | Whether the URL QR code is needed |
 | B5 | The AAAA answer from `address=/#/::` on the shipped dnsmasq | Dual-stack phones |
 | B6 | QR scan to page visible, and Start to Connected, over 10 runs each on iOS and Android | [01-flow.md §9](01-flow.md#9-timing-targets) |
+| B7 | Two phones on the hotspot with `wifi.ap-isolation=1`: can one reach the other? Also `nft list tables` (NM's firewall backend) and `ip -6 addr` on `ap0` after a client sends a router advertisement | S7, OS-1 |

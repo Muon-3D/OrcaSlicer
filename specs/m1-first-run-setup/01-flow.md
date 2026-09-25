@@ -65,7 +65,7 @@ The M1 has no RTC. `/etc/fake-hwclock.data` isn't persisted, so **every boot sta
 - **Phone path.** When the owner taps **Start**, the page posts the phone's clock and IANA time zone. The time zone is then set, whatever the region.
 - **Panel path.** The clock comes from NTP after the join. The time zone depends on the declared country:
   - one zone: that zone;
-  - several zones: the panel shows a **time zone** list after the region is confirmed, most populous first;
+  - several zones: the panel shows a **time zone** list after the region is confirmed, principal zone first (tzdata's `zone.tab` order);
   - no country declared: UTC, until the owner sets one.
 - **`update` and `remote: cloud` need a synced clock** for TLS. If NTP hasn't synced within 15 s of the join, `update` is hidden and `remote: cloud` shows `clock_unsynced` ([08-errors.md](08-errors.md)).
 
@@ -155,7 +155,7 @@ Add printer → "What does your printer's screen show?"
 
 These apply to every surface.
 
-1. The printer is the only source of truth. A surface that reconnects fetches `GET /server/muon/setup` and never replays local state.
+1. The printer is the only source of truth. A surface that reconnects fetches `GET /server/muon/setup` and never replays local state. A `GET` result replaces the held state whatever its `rev`. `rev` ordering applies only between notifications and write results ([02 §6](02-setup-api.md#6-state-document)).
 2. A dropped connection is never treated as a failed operation. The surface shows "Reconnecting to Walnut…" and waits for the state. After 30 s the phone adds "Check the printer's screen". The panel always shows the result.
 3. Anything the owner may need later also stays on the panel: the join result, the address and the link code. Losing the phone page loses nothing.
 4. The phone page keeps a draft of what the owner typed in `sessionStorage`, guarded by try/catch: the SSID, the security type and the Enterprise identity, **never passwords**. A captive-portal window that closes and reopens can then restore it.
@@ -182,7 +182,10 @@ Printers updated from firmware that had no setup flow MUST NOT be sent into setu
 - a link (muon-link `GET /link` returns `linked`);
 - a Moonraker database that already holds Fluidd UI settings.
 
-If so, it writes `state: complete`, with every step `done` and `source: "migrated"`, and shows no card. Getting those units a region is KAN-330's separate, non-blocking prompt, not this flow.
+If so, it writes `state: complete`, with every step `done` and `source: "migrated"`, and shows no card. It also writes the marker with Aux `POST /setup/complete {"by": "migrated"}`, retried every 30 s until Aux answers ([02 §4](02-setup-api.md#4-persistence)). Without the marker, H1 would keep the unit's hotspot up for good. Getting those units a region is KAN-330's separate, non-blocking prompt, not this flow.
+
+- **While the check can't finish** (Aux or muon-link isn't answering yet), `muon_setup` reports `complete` provisionally. It persists nothing and writes no marker, and it decides again as soon as they answer. A new printer then moves to `new`, and the panel's store watch sends it into setup ([04 §1](04-panel.md#1-architecture)). A field printer is never sent into setup by a slow boot.
+- **Factory QA must end with `muon3d-factory-reset`.** Otherwise a saved Wi-Fi network or Fluidd settings left from QA make a new unit look like one already in the field, and it skips setup.
 
 ## 8. Factory reset
 
@@ -193,10 +196,10 @@ Factory reset is `/usr/sbin/muon3d-factory-reset`: root only, at the console or 
 - the Iroh identity, and with it every link;
 - the owner's hotspot choice.
 
-Once #174's persist files have merged, it also clears:
+It also clears, once the PR that persists each one has merged:
 
-- the setup marker;
-- the declared country (ADR 0005, KAN-351).
+- the setup marker (OS-7, MuonOS#313);
+- the declared country (#174; ADR 0005, KAN-351).
 
 **What survives or comes back:**
 

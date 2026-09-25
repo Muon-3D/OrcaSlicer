@@ -39,12 +39,14 @@
   "region": {
     "market": "picker",
     "reason": "declared",
+    "explanation": "Free English text from the region agent, for logs. Never parse or show it.",
     "declared_country": "GB",
     "configuration": "gb",
     "domain": "GB",
     "surroundings": "settled",
     "detected_country": "GB",
     "basis": "joined-network",
+    "enforcement": "unknown",
     "locked": false,
     "channels": [
       1,
@@ -88,7 +90,8 @@
       "hostname_local": null,
       "internet": null,
       "error": null,
-      "region_confirmed": false
+      "region_confirmed": false,
+      "region_error": null
     },
     "name": {
       "status": "pending",

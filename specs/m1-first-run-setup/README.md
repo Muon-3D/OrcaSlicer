@@ -29,7 +29,7 @@ This folder specifies how a new Muon3D M1 gets from the box to its first print. 
 | D8 | A factory reset clears the declared country, and setup asks again. The market token survives. | ADR 0005 and KAN-351 supersede KAN-325's "keep the country". |
 | D9 | `muon_setup`, a Moonraker component, owns the state machine. MuonUI and the `/setup` page are thin renderers. | One source of truth. It survives phones dropping off and power loss, and it lets Bluetooth and the future app reuse the same API. |
 | D10 | Enterprise Wi-Fi (PEAP and TTLS) is supported from a phone or computer, not from the panel. | Three ring-keyboard fields plus a certificate is too much for a knob. Labs and universities need it. |
-| D11 | The hotspot reaches **only the printer**: no internet and no LAN (AP-7 made true). Its DNS answers every name with `10.42.0.1`. | That wildcard is what makes phones open the setup page by themselves. Today the hotspot NATs clients to the internet and leaves an Ethernet LAN reachable, which is a security gap (07 §3). |
+| D11 | The hotspot reaches **only the printer**: no internet, no LAN and no other hotspot client (AP-7 made true). The printer routes nothing. Its DNS answers every name with `10.42.0.1`. | That wildcard is what makes phones open the setup page by themselves. Today the hotspot NATs clients to the internet and leaves an Ethernet LAN reachable, which is a security gap (07 §3). |
 
 ## System map
 

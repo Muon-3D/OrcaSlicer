@@ -13,7 +13,7 @@ These work packages are sized for one agent or one PR each. Every package names 
 4. **No secrets anywhere.** Passwords and the hotspot key never appear in logs, state, events, fixtures or test snapshots.
 5. **Never factory-reset a real unit** (KAN-351). Use `POST /server/muon/setup/reset` on a development unit, which resets setup state only.
 6. **Keep the spec in step.** If an implementation needs the contract to change, change this spec in the same PR series and say so in the PR description. The spec lives at `specs/m1-first-run-setup/` in `Muon-3D/OrcaSlicer` until the team moves it.
-7. **One PR per package.** Title it `<ID>: <summary> (KAN-xxx)`, and link the spec section in the description.
+7. **One PR per package.** Title it `<ID>: <summary> (KAN-xxx)`, or `type(<ID>): <summary> (KAN-xxx)` where the repo checks semantic PR titles, and link the spec section in the description **at the spec commit you built against**. When the spec moves on, check `STATUS.md`'s "Spec changes" log and update the PR.
 
 ## 2. Packages
 
@@ -23,26 +23,26 @@ These work packages are sized for one agent or one PR each. Every package names 
 |---|---|---|---|
 | MR-1 | `muon_setup` core: the `[muon_setup]` config and template pin, the state document, persistence (namespace `muon_setup`), `rev`/`driver`/`op` handling, caller classification and write hygiene (§3), migration (01 §7), `GET` state and options, `goto`, `skip`, `finish`, `card/dismiss`, `reset`, `notify_muon_setup_changed`, the `muon_setup:complete` event, and the floor entry for `reset`. `finish` calls OS-5 `auto_off` and Aux `POST /setup/complete` (OS-7) through `aux_api_proxy`, with a fake in tests. The floor entry for `reset` also goes into MuonOS `fluidd.nginx.template`. | – | 02 §8 tests 1–4, 7, 8 and 13 pass; flake8 and mypy are clean |
 | MR-2 | Language (including Fluidd's default locale), clock, time zone, name (refactor `aux_api_proxy` to expose `set_friendly_name` and `get_identity`), and the tzdata lookup for options | MR-1; OS-6 for real clock and time-zone writes | Unit tests for each; the identity endpoint behaves as before |
-| MR-3 | Networks and join: normalising the scan with `channel_permitted`, the join orchestration (an optional region switch → join → phases; `status: "restored"` and 400 count as failures; `state_reason` mapped by its number), cancel, CA upload, Ethernet, the internet result, update visibility, and **§5.6a region confirmation**. Adds a timeout parameter to `aux_api_proxy.post()`. | MR-1; OS-2 (region codes), OS-3 (W5 uplink). Uses fakes until then. | 02 §8 tests 5, 6, 9 and 10 pass |
+| MR-3 | Networks and join: normalising the scan with `channel_permitted`, the join orchestration (an optional region switch → join → phases; `status: "restored"` and 400 count as failures; `state_reason` mapped by its number), cancel, CA upload, Ethernet, the internet result, update visibility, and **§5.6a region confirmation**. Adds a timeout parameter to `aux_api_proxy.post()`, and makes its error mapping keep Aux's `detail.code`. | MR-1; OS-2 (region codes), OS-3 (W5 uplink). Uses fakes until then. | 02 §8 tests 5, 6, 9 and 10 pass; `/server/muon/setup/network` is covered by Moonraker's verbose-log redaction (07 S2) |
 | MR-4 | The update step through `update_manager`, including the version check after reboot | MR-1 | Test 11 passes |
 | MR-5 | The remote step: `local`, `cloud` (mirroring `LinkPhase`, renewing past `expires_at`, never during `offer`), and `later`. `self_hosted` isn't offered in phase 1. | MR-1, MR-6 | Test 12 passes |
 | MR-6 | `muon_link`: build on [Muon-3D/Moonraker#20](https://github.com/Muon-3D/Moonraker/pull/20), which already has `GET /server/muon/link`, `POST …/start` and `POST …/cancel`. Add: polling `GET /link` with the `muon_link:link_changed` event, public `status()`/`start()`/`cancel()`, and a limit of 5 `start` calls per minute per IP. **Never add confirm or unlink.** | PR #20 merged (or stacked on it); ML-1 | `tests/test_muon_link.py` extended and passing; Fluidd's `startLanLink()` works against a dev unit |
-| MR-7 | The ready step: the manifest (loaded from a file, with a default and a schema check), confirm, macro start through `klippy_apis`, hiding undefined macros, and the busy and not-ready guards | MR-1 | Unit tests pass |
+| MR-7 | The ready step: the manifest (loaded from a file, with a default and a schema check), confirm, macro start through `klippy_apis`, hiding undefined macros, and the busy, order and not-ready guards (02 §5.10) | MR-1 | Unit tests pass, including a paused print, the clips-before-self-test order, and a "Finish setup" card that stops halfway |
 | MR-8 | Zeroconf: the `_octoprint._tcp` record advertises **port 80** (nginx), and TXT gains `name=<display>` and `setup=<state>`; the record is re-registered when either changes. Coordinate with KAN-364's NET-3 record so it also carries `setup`. | MR-1 | OrcaSlicer's Bonjour dialog lists a dev unit, and `dns-sd -L` shows port 80 and the TXT keys |
-| MR-9 | `aux_api_proxy`: register the identity endpoints in `__init__` (503 while Aux is down), add `setup` to `/server/muon/identity`, and fix `tests/test_aux_api_proxy.py`, whose `FakeServer` has no `database` (42 of 44 tests fail today) | MR-1 | That test file is green |
+| MR-9 | `aux_api_proxy`: register the identity and `dev_mode` endpoints in `__init__` (503 while Aux isn't answering), add `setup` to `/server/muon/identity`, and fix `tests/test_aux_api_proxy.py`, whose `FakeServer` has no `database` (42 of 44 tests fail today) | MR-1 | That test file is green |
 
 ### MuonOS (`Muon-3D/MuonOS`: Aux API, image, services)
 
 | ID | Package | Depends on | Done when |
 |---|---|---|---|
-| OS-1 | Captive portal and hotspot isolation (D11): reject all forwarding from `ap0` in `10-ap-isolate`, including to `eth0`; `tcp/443` reject with tcp reset on `ap0` in `muon3d-firewall.nft`; pin `10.42.0.1` in `ap0-con`, with the profile migration; the dnsmasq drop-in; the nginx `map`/redirect and `location = /setup` (must pass `check-nginx-templates.sh`); update `test_firewall_ruleset.py` | #305 (listeners) | B5 passes; iOS and Android open `/setup` by themselves; hotspot clients can't reach the LAN or the internet |
+| OS-1 | Captive portal and hotspot isolation (D11): the printer routes nothing, with the properties in 03 §2 item 1 (IPv4 and IPv6, interface-based, loaded before NM, backend-independent, never blocking `10.42.0.1`); `tcp/443` reject with tcp reset on `ap0`; pin `10.42.0.1`, `ipv6.method=disabled` and `wifi.ap-isolation=1` in `ap0-con`, migrating persisted profiles in `muon-ap-provision.sh`; the dnsmasq drop-in; the nginx `map`/redirect and `location = /setup` (must pass `check-nginx-templates.sh`); update `test_firewall_ruleset.py`, the `10-ap-isolate` tests and AP-7. Don't merge before the pinned Fluidd serves `/setup`. | #305 (listeners) | B5 and B7 pass; iOS and Android open `/setup` by themselves; from a phone on the hotspot, a LAN host and a public IP are unreachable with and without Ethernet, including after `ap0-con` goes down and up |
 | OS-2 | Region, on draft #174: stable `detail.code` values from the agent's `OUTCOMES`; `SET_COUNTRY_TIMEOUT_S` under 60 s; a concurrency guard returning `busy`; channels per configuration in `/region/options`. **Blocked for real devices until signing keys and tokens exist** (KAN-321, KAN-132). | #174 merged | Aux tests pass; R2 and R9 pass on the bench |
 | OS-3 | Wi-Fi: W1 (replacing a saved secret is #210; `hidden` needs `nmcli connection add`), W2 (stable error codes), W5 (`/wifi/uplink`, with the internet check from Nexigon `check_connectivity()`), W6 (`/wifi/saved` is #210) | #210 | Aux tests pass |
 | OS-4 | Enterprise: W3 (an `eap` connect through a new privilege path, D-Bus/polkit or `nmcli connection add`) and W4 (`/wifi/ca_cert`, plus a persist declaration and inventory rows for `/etc/NetworkManager/certs`). The largest OS item; it can ship after phase 1 without blocking anything. | OS-3 | R6 passes against N6 |
 | OS-5 | Hotspot rules H1–H4 in `muon-ap-lifecycle.sh`, with the new `ap-hotspot-kept-on` marker; `POST /wifi/ap/auto_off` through a sudo-granted helper that starts a transient systemd timer; floor entries in both lists | OS-7 (H1 reads the marker) | H1–H4 verified on a dev unit; R8 passes |
-| OS-6 | Time: `GET/POST /time` and `POST /time/zone` with sudoers entries; the time zone stored in `/var/lib/muon3d/setup/timezone`, applied by a boot oneshot; a data-inventory row | OS-7 (the persisted `setup/` directory) | Aux tests pass; the time zone survives a reboot |
-| OS-7 | The setup marker: **MuonOS `feat/KAN-413-setup-marker`**. `GET`, `POST` and `DELETE /setup/complete` over `/var/lib/muon3d/setup/complete`; `muon3d-setup.toml`; rows in ID-9 and the data inventory. Still to add: `/server/aux/setup/complete` in `fluidd.nginx.template`'s 403 list and in `test_floor.py`, paired with Moonraker's `FLOOR_PREFIXES`. #174 drops its own `setup_routes.py`/`setup.toml`, or rebases onto this. | – | `test_setup_marker.py`, `test_persisted_paths.py` and the ID-9 test pass; the marker survives an OTA update |
-| OS-8 | Ship `/usr/share/muon/setup/ready.json`, with the hardware team, and the `MUON_SELF_TEST` macro if they want one | Hardware team decision | The manifest validates |
+| OS-6 | Time: `GET/POST /time` and `POST /time/zone` with pinned sudoers entries; the time zone kept in `/var/lib/muon3d/time/timezone` (`muon3d-time.toml`), re-applied by `muon3d-timezone.service`; a data-inventory row. `/server/aux/time` floored (02 §1). | – | Aux tests pass; the time zone survives a reboot |
+| OS-7 | The setup marker: **MuonOS `feat/KAN-413-setup-marker`**. `GET`, `POST` and `DELETE /setup/complete` over `/var/lib/muon3d/setup/complete`; `muon3d-setup.toml`; rows in ID-9 and the data inventory. The floor pairing lands with the Moonraker pin bump past Moonraker#25 (02 §1): `EXPECTED_FLOOR` in `test_trusted_clients.py`, the 403 location in `fluidd.nginx.template`, and `FLOOR_CASES` in `test_floor.py`. Accepts `by: migrated`. #174 drops its own `setup_routes.py`/`setup.toml`, or rebases onto this. | – | `test_setup_marker.py`, `test_persisted_paths.py` and the ID-9 test pass; the marker survives an OTA update |
+| OS-8 | Ship `/usr/share/muon/setup/ready.json`, with the hardware team, and the `MUON_SELF_TEST` macro if they want one | Hardware team decision | `ready.json` validates in MuonOS CI with Moonraker's manifest validator (an invalid file silently falls back to the default) |
 | OS-9 | Pin the new MuonUI and Fluidd builds in the image, updating the Fluidd zip checksum guard (it blocked the KAN-321 C3 run) | The UI and FL packages | The image builds and boots to setup on a clean flash |
 | OS-10 | muon-link wiring for the account link: an nginx `location /muon-link/` on the **`:100` vhost only**, `MUON_LINK_ORCH_ID` and `MUON_LINK_RELAY_URL` in the muon-link unit, and **never** `MUON_LINK_DISCOVERABLE=1` (03 §6) | ML-1 | The panel can read `/muon-link/link`; `:80` can't reach it |
 | OS-11 | **Security, urgent and independent of setup:** stop Wi-Fi PSKs reaching the persisted journal. Pass secrets through nmcli `passwd-file` (0600, tmpfs) or D-Bus instead of argv; add sudoers `!syslog` for the connect command; vacuum existing entries on update (07 §3). | – | `journalctl` shows no PSK after a connect; a test covers the argv |
@@ -69,15 +69,15 @@ These work packages are sized for one agent or one PR each. Every package names 
 
 | ID | Package | Depends on | Done when |
 |---|---|---|---|
-| FL-1 | The `/setup` shell: the route (lazy, chrome-less, `printerIndependent`), `client.ts`, `state.ts`, `screen.ts`, the `notifyMuonSetupChanged` socket action, and the bundle budget check | MR-1 (fixtures until then) | 05 §11 client and screen tests pass; `/setup` chunk ≤ 900 KB gzipped |
+| FL-1 | The `/setup` shell: the route (lazy, chrome-less, `printerIndependent`), `main.ts` mounting at once on `/setup` without `appInit` or `initCloud`, `client.ts`, `state.ts`, `screen.ts`, the `notifyMuonSetupChanged` socket action, the page-language rule and header switcher (05 §9), and the bundle budget check | MR-1 (fixtures until then) | 05 §11 client and screen tests pass, including `screenFor` over fixtures 04b, 04c and 04d; `/setup` ≤ 900 KB gzipped with the shared vendor chunk |
 | FL-2 | Cloud base URL: read `VUE_APP_MUON_CLOUD_URL` (matching `envPrefix: 'VUE_'`, declared in `env.d.ts`), default to `https://app.muon3d.com` on any other origin, and call `setCloudBaseUrl` on init | CON-1 | A printer-served Fluidd can sign in and claim a code |
 | FL-3 | The `/setup` screens S0–S10, the region line, the error mapping, and the `en` keys | FL-1, MR-3 | `Setup.spec.ts` and E2E scenarios 1–8 pass |
 | FL-4 | `AddPrinterDialog`: the entry points, the `LinkClaim` refactor, discovery merging the mDNS feed with the sweep, and the `setup` badges | FL-1, MR-9 | 06 §2.6 tests pass; R14 and R15 pass |
 | FL-5 | The Dashboard "Finish setup" banner | FL-1 | A unit test over the state variants |
 | FL-6 | i18n: de, fr, es and it for `app.muon.setup.*` and `app.muon.add_printer.*`; convert the Muon screens touched here to `$t`; add `app.general.confirm.enter_password` and `app.general.btn.connect` | FL-3, FL-4 | `npm run i18n-extract` reports no missing keys for these namespaces |
 | FL-7 | Add `app.muon3d.com` to the host blacklist in `public/config.json` and `server/config.json`, so app.muon3d.com doesn't probe itself for 5 s at startup | – | Loading app.muon3d.com shows no 5 s wait |
-| FL-8 | Fix `useHotspotCheck` (call it inside `setup()`, and treat only the same origin as the hotspot), and stop the hotspot card's QR from saying `T:nopass` when the key is redacted (overlaps KAN-376) | – | `HotspotManagerCard.spec.ts` extended; passes |
-| FL-9 | Route the aux API client through `Vue.$httpClient`, or rebind `auxAxios`'s adapter, so it works over Iroh and carries auth. Stop `AddInstanceDialog` verification going over Iroh. | – | A cloud-activated printer's Wi-Fi card loads |
+| FL-8 | Make `useHotspotCheck` a pure origin read with no lifecycle hook (`isHotspotOrigin()`: only `10.42.0.1`), and stop the hotspot card's QR from saying `T:nopass` when the key is redacted. Draw the join QR only for an open hotspot (`security_enabled === false`); never put a key in a Fluidd QR (07 S1). Ships with MuonOS#300 (KAN-376). | – | `HotspotManagerCard.spec.ts` extended; passes |
+| FL-9 | Rebind `auxAxios`'s adapter and `Authorization` on each request from `Vue.$httpClient`, so the Aux client works over Iroh and carries auth. (Routing it through `$httpClient` doesn't work: the generated client drops `basePath` when the instance has a `baseURL`.) Stop `AddInstanceDialog` verification going over Iroh. Make the Iroh adapter reject non-2xx responses, as axios's `settle()` does. | – | A cloud-activated printer's Wi-Fi card loads, checked on a linked unit; a 400 over the Iroh transport rejects |
 
 ### Console (`muon-console`, not reviewed for this spec)
 
@@ -97,7 +97,7 @@ These work packages are sized for one agent or one PR each. Every package names 
 
 | ID | Package | Depends on |
 |---|---|---|
-| QA-1 | Bench measurements B1–B6 (03 §9), **early**: they may change the phone copy and timeouts | OS-1, OS-5, a dev build with MR-1/MR-3 |
+| QA-1 | Bench measurements B1–B7 (03 §9), **early**: they may change the phone copy and timeouts | OS-1, OS-5, a dev build with MR-1/MR-3 |
 | QA-2 | The full bench matrix R1–R16 and the phase 1 acceptance checklist (09 §4) | Everything in phase 1 |
 
 ## 3. Order and parallel work
@@ -106,7 +106,7 @@ These work packages are sized for one agent or one PR each. Every package names 
 Week-ish 1   MR-1 ─────────┐   OS-11 (urgent)  OS-7  OS-1  OS-6  ML-1  UI-0   FL-7 FL-8 FL-9  OR-1
              (contract)    │
 Week-ish 2   MR-2 MR-4 MR-7│  OS-5  OS-3(#210) OS-2(#174) ─▶ MR-3   MR-6(#20) ─▶ MR-5   MR-8 MR-9
-             UI-1  FL-1  (against fixtures)            QA-1 (B1–B6 on a dev build)
+             UI-1  FL-1  (against fixtures)            QA-1 (B1–B7 on a dev build)
 Week-ish 3   UI-2  FL-3  (against the real API)   UI-3  FL-4  FL-2(+CON-1)  OS-4  OR-2
 Week-ish 4   UI-4  FL-5  UI-5  FL-6   OS-8  OS-9
 Then         QA-2 → phase 1 done
@@ -140,10 +140,10 @@ Then         QA-2 → phase 1 done
 | KAN-364 / NET-3 | MR-8, and the discovery merge in FL-4 |
 | KAN-376 Fluidd hotspot card | Overlaps FL-8 |
 | KAN-326 Hotspot band pin | A prerequisite of OS-5 |
-| KAN-329 Bench measurements | QA-1 and QA-2 (B1–B6, R1–R16) |
+| KAN-329 Bench measurements | QA-1 and QA-2 (B1–B7, R1–R17) |
 | KAN-339 Wi-Fi refactor | OS-3 (W6 `/wifi/saved`, MuonOS#210) |
 | KAN-330 Installed base | The migration rule (01 §7) keeps fielded units out of setup; KAN-330's region prompt stays separate |
 | KAN-198 Clock before TLS | The clock rules (01 §2.2) and OS-6 |
 | KAN-378 Diagnostic bundle | The "Save a diagnostic bundle" action after repeated region failures |
 | SEC-8 Level 1 | Add `/server/muon/setup/*` writes and `/server/muon/link/start` to the protected set (07 §3) |
-| New tickets needed | OS-11 (security), OS-1, OS-4, OS-6, OS-7, OS-10, ML-2, UI-0, MR-8, MR-9, FL-2, FL-4, FL-6–FL-9, CON-1 |
+| New tickets needed | OS-11 (security), OS-1, OS-4, OS-6, OS-7, OS-10, ML-2, UI-0, MR-8, MR-9, FL-2, FL-4, FL-6–FL-9, CON-1; a follow-up for `aux_api_proxy` to retry its spec fetch in the background |

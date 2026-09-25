@@ -8,7 +8,7 @@
 - Vitest 2 with happy-dom.
 - It runs as a Chromium kiosk under `cage`, served by the loopback-only nginx vhost on `:100`.
 - The vhost's CSP is `script-src 'self'; img-src 'self' data:; connect-src 'self' …`. Anything new must be bundled, and images must be inline SVG or `data:`.
-- The shell is a white 480×480 circle using the Vuetify **light** theme. Tokens live in `src/styles/m3d-tokens.css`.
+- The shell is a white 480×480 circle using the Vuetify **light** theme, like every other screen. Use the Vuetify theme colours (`rgb(var(--v-theme-accent))`, `rgb(var(--v-theme-secondary))`, `rgb(var(--v-theme-background))`), as `RadialMenuScreen.vue` and `VerticalDotScrollbar.vue` do. **Don't use the `--m3d-*` tokens** in `src/styles/m3d-tokens.css`: `index.html` sets `data-theme="dark"`, so they resolve to the dark palette on the panel.
 
 **Read `AGENTS.md` first.** It is the repo's own conventions file. Note that its mention of `WifiSubMenuView.vue` is stale.
 
@@ -30,15 +30,16 @@
 | `src/helpers/setupScreen.ts` | A pure function, `screenFor(state, local) → ScreenId`, with unit tests. It is the only thing that decides which screen shows. |
 | `src/views/screens/SetupView.vue` | #31's route view, rewritten to render whatever `screenFor` returns. |
 | `src/components/setup/*.vue` | One component per screen below. |
-| `src/helpers/setupQr.ts` | Add the `qrcode` dependency and render inline SVG with `QRCode.toString(text, {type: 'svg', errorCorrectionLevel: 'M', margin: 4})`. The CSP blocks `blob:`. It must build on Node 18, which is in the CI matrix. |
+| `src/helpers/setupQr.ts` | Render inline SVG with error correction M and a 4-module quiet zone, using a bundled encoder: `qrcode` (`QRCode.toString(text, {type: 'svg', errorCorrectionLevel: 'M', margin: 4})`) or `uqr` (MIT, no dependencies, the same encoder Fluidd uses). The CSP blocks `blob:`. It must build on Node 18, which is in the CI matrix. |
 | `src/i18n/` and `src/locales/{en,de,fr,es,it}.json` | **UI-0.** MuonUI has no i18n today. Add `vue-i18n` and load all five catalogues at startup: P1 shows each language's own title as the knob passes it, and the ready-manifest `title_key`s need them. Use plain `en`, not #31's `en-GB`. |
 | `src/dev/mockBackend.ts` and `mockServer.ts` | Add `server.muon.setup*`, and push `notify_muon_setup_changed` built from `specs/m1-first-run-setup/fixtures/`, so `npm run dev:mock` shows every screen. |
 
 **Routing:**
 
 - Keep #31's check at mount, but read `setupStore.state` instead of Aux `/setup`.
-- Also watch the store. Whenever the state is `new` or `in_progress` and the route isn't `setup`, call `router.replace({name: 'setup'})`. This also covers a reset.
+- Also watch the store. Whenever the state is `new` or `in_progress` and the route isn't `setup`, call `router.replace({name: 'setup'})`. This also covers a reset. **Exception:** never redirect away from `printing` while a print runs.
 - While on `/setup`, suppress `App.vue`'s global update prompt (lines 493–501) and its rollback notice; P10 covers updates.
+- While on `/setup`, also suppress the Klippy fault modal. A new unit's Klipper may not be ready, and setup doesn't need it before P13. At P13, a `macro` item that can't run because Klipper isn't ready shows the item's error instead.
 
 **Talking to other services:**
 
@@ -72,7 +73,7 @@
 
 - Centre content with `padding: 24px 56px`, as #31 does, since there is no safe-area helper.
 - Use the type scale from `SettingsView.vue` and `Modal.vue`.
-- Use the tokens `--m3d-accent` for highlight and progress and `--m3d-surface-2` for tracks.
+- Use `rgb(var(--v-theme-accent))` for highlight and progress and `rgb(var(--v-theme-secondary))` for tracks.
 
 **Progress** uses `ArcProgress.vue`, filled to `index(cursor) / count(visible steps)`.
 
@@ -108,7 +109,7 @@ Screen letters A–J match the mockups on the design page. There is no P3: the s
 - **Items:**
   - **Set up here** (focused) claims `driver=panel`.
   - **Show network details** shows the SSID and key as text.
-- **The hotspot is up during setup** because of H1 ([03-printer-os.md §1](03-printer-os.md#1-hotspot-lifecycle)). The panel doesn't raise it.
+- **The hotspot is up during setup** because of H1 ([03-printer-os.md §1](03-printer-os.md#1-hotspot-lifecycle)). The panel doesn't raise it. If `hotspot.up` is `false` (for example just after boot), show "Starting the hotspot…" in place of the QR code and wait for the state to change. **Set up here** stays available.
 
 ### P4 · Wi-Fi list (C)
 
@@ -170,12 +171,12 @@ This follows KAN-321 Rev 11 and #31: the region comes from the network the print
 ### P7b · Time zone
 
 - **Shown only** when no phone has set the time zone and the declared country has more than one zone.
-- **Content:** the zones, most populous first, each with its local time.
+- **Content:** the zones in `options.timezones` order (principal zone first), each with its local time.
 - **Press:** posts `timezone`.
 
 ### P8 · Following a phone (F)
 
-- **Shown while** `driver.kind` is `phone`, `web` or `app` and the claim hasn't lapsed.
+- **Shown while** `driver.kind` is `phone`, `web` or `app`, whether or not the claim has lapsed.
 - **Content:** the title for the driver kind, then "<Step> · step n of N", with `ArcProgress`:
 
   | `driver.kind` | Title |
@@ -186,7 +187,7 @@ This follows KAN-321 Rev 11 and #31: the region comes from the network the print
 
 - **Operations:** an `op`'s progress shows here too, and a join result shows for 5 s.
 - **Continue here** claims `driver=panel`.
-- **Lapsed** (after 30 s): add "The phone went quiet".
+- **Lapsed** (after 30 s, announced by `muon_setup` without a `rev` change, 02 §6): add "The phone went quiet" for `phone` and `app`, or "The computer went quiet" for `web`. **Continue here** stays focused.
 
 ### P9 · Name
 
