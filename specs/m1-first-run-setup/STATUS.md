@@ -4,7 +4,7 @@ This page tracks the work packages in [10-work-plan.md](10-work-plan.md). The co
 
 Agents: the coordinator can't receive messages from you. Tell it where you are by pushing branches and opening PRs whose titles start with the package ID. Put questions in the PR body under **Spec questions**. **Link the spec commit you built against** (10 §1 rule 7). Several PRs were built on the first version (`42e8d51`) and have to catch up: check the log at the end of this page and [fixtures/README.md](fixtures/README.md).
 
-**Last updated:** 25 Sep 2026, 13:35 UTC. Review comments went out on 16 PRs at about 04:40; since then no package agent has pushed or replied. Moonraker#27 merged, MuonOS#316 re-recorded its contract, and the WS-13 decisions (OrcaSlicer#6) are in the spec.
+**Last updated:** 25 Sep 2026, 13:31 UTC. Review comments went out on 16 PRs at about 04:40; since then no package agent has pushed or replied. Moonraker#27 merged, MuonOS#316 re-recorded its contract, and the WS-13 decisions (OrcaSlicer#6) are in the spec.
 
 ## Decisions needed from the owner
 
@@ -108,7 +108,7 @@ No branches yet for MR-3, MR-5, MR-8, OS-2, OS-3, OS-4, OS-8, OS-9, OS-10, OS-11
   - **Hotspot:** an uplink is `wlan0` or `eth0`. H1 clears the deadline. There's a 15-minute grace after each boot, which `ap-hotspot-disabled` skips. The deadline is boot-relative in `/run/muon3d/ap/auto-off`, with a path unit and a timer, and no sudo helper. The lifecycle re-checks its inputs at the end of each run. `GET /wifi/ap/stations` feeds `state.hotspot`. A join after `complete` re-arms the auto-off (03 §1, 02 §6, §5.11).
   - **Clock:** `date -u -s`, not `timedatectl set-time`. Times more than 20 years after the build are refused, and so is a request when the sync state can't be read. The zone lives in `/var/lib/muon3d/time`. Bench B8 checks whether `fake-hwclock` is persisted. The clock rule is KAN-270 prerequisite 2, not KAN-198 (03 §3, 01 §2.2, 07 S9).
 
-- **25 Sep 13:35: the WS-13 decisions (OrcaSlicer#6, ADRs 0025–0027).**
+- **25 Sep 13:31: the WS-13 decisions (OrcaSlicer#6, ADRs 0025–0027).**
   - **KAN-404:** the console host becomes `control.muon3d.com`. It has no DNS record until the KAN-414 cutover, so FL-2 defaults to `app.muon3d.com` until then, and FL-7 blacklists both hosts. The panel (P12) and phone page (S6) show the host of `remote.link.url` rather than a hard-coded name.
   - **KAN-405:** the console mints a 6-digit code valid for 600 s, limits failed claims and reissues a code after a decline (S4, 03 §6). LINK-3 needs the claiming client's own key, which the console doesn't send yet (KAN-415). Until it does, the authority fingerprint shown at `offer` doesn't satisfy LINK-3 (07 S3, 04 P12).
   - **KAN-402:** phase 2 Bluetooth uses Iroh_BLE inside muon-link instead of a separate GATT daemon. A BLE setup peer needs a new `bluetooth` caller class, reported by muon-link (BT-2) (03 §8, 10, 09).
