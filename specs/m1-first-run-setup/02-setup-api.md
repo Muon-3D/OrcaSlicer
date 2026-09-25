@@ -519,7 +519,7 @@ Add `tests/test_muon_setup.py` with fakes for `database`, `aux_api_proxy` and `k
 | `POST /server/muon/link/start` | `POST /link/start` | Returns `connecting` at once. Fluidd's `startLanLink()` already polls until it sees `code`. |
 | `POST /server/muon/link/cancel` | `POST /link/cancel` | |
 
-**Confirm and unlink are never forwarded.** PR #20's tests assert this, following ADR 0018 and LINK-3. The panel calls muon-link's `POST /link/confirm`, `/link/cancel` and `/link/unlink` directly, through an nginx `/muon-link/` location on the loopback-only `:100` vhost (OS-10). Nothing is added to `FLOOR_PREFIXES` for linking.
+**Confirm and unlink are never forwarded.** PR #20's tests assert this, following ADR 0018 and LINK-3. muon-link refuses `start` while an offer waits, so `muon_setup` never renews a code during `offer` (§5.9) and passes a 409 on `start` through as the current phase rather than an error. The panel calls muon-link's `POST /link/confirm`, `/link/cancel` and `/link/unlink` directly, through an nginx `/muon-link/` location on the loopback-only `:100` vhost (OS-10). Nothing is added to `FLOOR_PREFIXES` for linking.
 
 **MR-6 adds to PR #20**, after it merges or as a follow-up PR:
 

@@ -270,8 +270,8 @@ The account link is **muon-link PR #24** ([Muon-3D/muon-link#24](https://github.
 | Admin route on `127.0.0.1:7131` | Caller | Does |
 |---|---|---|
 | `GET /link` | Moonraker `muon_link`; panel | Returns the current `LinkPhase` ([02-setup-api.md §5.9](02-setup-api.md#59-remote-access)) |
-| `POST /link/start` | Moonraker `muon_link` | Sends `LinkStart` and moves to `connecting`. The orchestrator's `LinkCode` then moves it to `code`. |
-| `POST /link/confirm` | **Panel only**, directly | Accepts the pending offer, which moves to `linked` |
+| `POST /link/start` | Moonraker `muon_link` | Sends `LinkStart` and moves to `connecting`. The orchestrator's `LinkCode` then moves it to `code`. **Refused (409) while an offer waits**; a new code never replaces a pending offer. |
+| `POST /link/confirm` `{ "account", "fingerprint" }` | **Panel only**, directly | Accepts the pending offer, which moves to `linked`. The body must echo the `offer` the panel showed, read from `GET /link`: 400 without it, 409 if the waiting offer is a different one. A different second offer is declined, and the attempt fails. (muon-link#24 `d26c5b5`.) |
 | `POST /link/cancel` | Moonraker `muon_link`; panel | Declines a pending offer and drops the connection |
 | `POST /link/unlink` | **Panel only** | Removes the link and every grant (LINK-8) |
 
