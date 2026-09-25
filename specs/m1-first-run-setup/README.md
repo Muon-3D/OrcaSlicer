@@ -47,7 +47,7 @@ This folder specifies how a new Muon3D M1 gets from the box to its first print. 
                          │                                   /wifi/* /region/* /time* /setup/complete
                          │                                   ─▶ NetworkManager, regdomain, timedatectl
                          └───────────────────────────────────────────────────────────────────┘
- app.muon3d.com (https) ── can't reach the LAN ──▶ "What does the screen show?" → code → console /v1/links/*
+ control.muon3d.com (https) ── can't reach the LAN ──▶ "What does the screen show?" → code → console /v1/links/*
  OrcaSlicer ── DNS-SD _octoprint._tcp (port 80, TXT name/setup) ──▶ Browse dialog
 ```
 
@@ -60,7 +60,7 @@ This folder specifies how a new Muon3D M1 gets from the box to its first print. 
 | [03-printer-os.md](03-printer-os.md) | MuonOS, muon-link | Hotspot lifecycle, captive portal, Aux region, time, Wi-Fi and Enterprise changes, the link contract, the completion marker, Bluetooth (phase 2), bench measurements |
 | [04-panel.md](04-panel.md) | MuonUI | The knob model, screens P1–P14, the ring keyboard, QR codes, tests |
 | [05-phone-setup-page.md](05-phone-setup-page.md) | Fluidd | The `/setup` route, screens S0–S10, the region line, the client and its reconnect rules, captive-window constraints, i18n, the dashboard card, tests |
-| [06-add-printer.md](06-add-printer.md) | Fluidd, OrcaSlicer | The routing table, `AddPrinterDialog`, app.muon3d.com, OrcaSlicer Bonjour and profile changes, the future app |
+| [06-add-printer.md](06-add-printer.md) | Fluidd, OrcaSlicer | The routing table, `AddPrinterDialog`, control.muon3d.com, OrcaSlicer Bonjour and profile changes, the future app |
 | [07-security.md](07-security.md) | Everyone | Rules S1–S12, the access summary, known gaps, privacy notes |
 | [08-errors.md](08-errors.md) | UI authors | Every error code with its copy and actions |
 | [09-testing.md](09-testing.md) | Everyone, QA | Automated suites by repo, the E2E mock, the bench matrix, acceptance checklists |
@@ -94,7 +94,7 @@ This folder specifies how a new Muon3D M1 gets from the box to its first print. 
 | CNA | The captive-portal window iOS and Android open by themselves. |
 | Level 0 Open | SEC-1: the LAN and the hotspot are trusted, with no sign-in. |
 | The floor | `muon_floor.FLOOR_PREFIXES`: endpoints refused to anything but loopback. |
-| Link | Binding the printer to a Muon account: a code on the panel, a claim on app.muon3d.com, then a knob confirm. |
+| Link | Binding the printer to a Muon account: a code on the panel, a claim on control.muon3d.com, then a knob confirm. |
 | Marker | `/var/lib/muon3d/setup/complete`, behind Aux `/setup/complete` (MuonOS KAN-413). It records that setup finished (KAN-203). |
 
 ## Verify before building
@@ -113,13 +113,13 @@ Each repo was checked against the code on 24 Sep (Moonraker `dc76b59`, Fluidd `9
    Agents must coordinate with those PRs' authors, not fork them.
 2. **No unit can declare a region yet.** There are no signing keys or tokens (KAN-321, KAN-132), so setup runs as market `none` until they exist.
 3. **The account link has open questions:**
-   - the LINK-2 conflict over who mints the code;
-   - the code's limits in muon-console;
+   - ~~the LINK-2 conflict over who mints the code~~ and ~~the code's limits in muon-console~~: settled 25 Sep (ADR 0026). The console mints it and limits failed claims;
+   - the LINK-3 client-key comparison on the panel (KAN-415);
    - no proof of a knob press on `/link/confirm` (ML-2).
 
    See 03 §6.
 4. **Ready to print.** The manifest content and the `MUON_SELF_TEST` macro belong to the hardware team (D6).
-5. **Bluetooth (phase 2)** needs MuonOS SPEC AP-10 amended. AP-10 currently says "explicitly not built".
+5. **Bluetooth (phase 2)** uses Iroh_BLE (decided 25 Sep, ADR 0027; AP-10 amended in MuonOS#317). It needs a `bluetooth` caller class through muon-link (03 §8), and Bluetooth SIG qualification.
 6. **Security bugs found on the way** (07 §3):
    - Wi-Fi passwords in the persisted journal (OS-11, urgent);
    - hotspot clients reaching the internet and an Ethernet LAN (OS-1).

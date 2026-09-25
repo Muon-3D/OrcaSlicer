@@ -76,8 +76,8 @@ Record the results in KAN-329. Each row is run from a factory-fresh unit. KAN-35
 | R10 | A unit with no token (today every unit is `no-signing-key`) | The re-registration notice appears. Joins on ch 1–11 work, and setup completes without a region. |
 | R11 | Pull the power during the join, during the region apply, and during the update | It resumes at the same step with `interrupted`, or for the update, the OTA result |
 | R12 | A field unit updated from pre-setup firmware | It does **not** enter setup (`migrated`) |
-| R13 | Link from the phone path | A code appears on the panel and the phone. It's claimed on app.muon3d.com from another device, confirmed on the knob, and remote is done. |
-| R14 | Add printer from app.muon3d.com (https) | Opens at "What does your printer's screen show?". Each answer leads to the right next step. |
+| R13 | Link from the phone path | A code appears on the panel and the phone. It's claimed on control.muon3d.com from another device, confirmed on the knob, and remote is done. |
+| R14 | Add printer from control.muon3d.com (https) | Opens at "What does your printer's screen show?". Each answer leads to the right next step. |
 | R15 | Add printer from the printer's own Fluidd (http) with a new M1 and a set-up M1 on the LAN | Badges show "Needs setup" and "Ready", and routing is correct |
 | R16 | OrcaSlicer Browse with the same two printers, after MR-8 | Both are listed with their status. The empty-state help appears when both are off. |
 | R17 | The Muon3D app path on an iPhone and on a Pixel, N1, once the app has setup screens (KAN-390) | The app joins the hotspot from the panel's Wi-Fi QR code, and the panel shows "Setting up from the Muon3D app". Setup reaches Connected and the phone returns to its usual Wi-Fi. The hotspot key isn't in the device log (Console.app on iOS, `adb logcat` on Android), the app's stored data, its crash reports, or its network traffic to any host (07 S12). |
@@ -96,6 +96,7 @@ Record the results in KAN-329. Each row is run from a factory-fresh unit. KAN-35
 
 **Phase 2 (Bluetooth) is done when:**
 
-- [ ] Web Bluetooth in Chrome on Android and desktop finds a new M1, pairs with SPAKE2 and a knob confirm, and completes R3's flow with no hotspot join.
+- [ ] The Muon3D app on an iPhone and on a Pixel, and Web Bluetooth in Chrome on Android and desktop, each find a new M1 over Iroh_BLE, confirm on the knob, and complete R3's flow with no hotspot join.
+- [ ] A BLE setup peer gets caller kind `bluetooth`, and a remote peer still gets `remote` (read-only).
 - [ ] Coexistence: an AP + STA + BLE session shows no hotspot drops beyond B1/B2.
-- [ ] The daemon advertises only in the allowed windows.
+- [ ] muon-link advertises over BLE only in the allowed windows.

@@ -70,12 +70,12 @@ These work packages are sized for one agent or one PR each. Every package names 
 | ID | Package | Depends on | Done when |
 |---|---|---|---|
 | FL-1 | The `/setup` shell: the route (lazy, chrome-less, `printerIndependent`), `main.ts` mounting at once on `/setup` without `appInit` or `initCloud`, `client.ts`, `state.ts`, `screen.ts`, the `notifyMuonSetupChanged` socket action, the page-language rule and header switcher (05 §9), and the bundle budget check | MR-1 (fixtures until then) | 05 §11 client and screen tests pass, including `screenFor` over fixtures 04b, 04c and 04d; `/setup` ≤ 900 KB gzipped with the shared vendor chunk |
-| FL-2 | Cloud base URL: read `VUE_APP_MUON_CLOUD_URL` (matching `envPrefix: 'VUE_'`, declared in `env.d.ts`), default to `https://app.muon3d.com` on any other origin, and call `setCloudBaseUrl` on init | CON-1 | A printer-served Fluidd can sign in and claim a code |
+| FL-2 | Cloud base URL: read `VUE_APP_MUON_CLOUD_URL` (matching `envPrefix: 'VUE_'`, declared in `env.d.ts`), default to the console host on any other origin (`https://control.muon3d.com` after the KAN-414 cutover; `https://app.muon3d.com` until then), and call `setCloudBaseUrl` on init | CON-1 | A printer-served Fluidd can sign in and claim a code |
 | FL-3 | The `/setup` screens S0–S10, the region line, the error mapping, and the `en` keys | FL-1, MR-3 | `Setup.spec.ts` and E2E scenarios 1–8 pass |
 | FL-4 | `AddPrinterDialog`: the entry points, the `LinkClaim` refactor, discovery merging the mDNS feed with the sweep, and the `setup` badges | FL-1, MR-9 | 06 §2.6 tests pass; R14 and R15 pass |
 | FL-5 | The Dashboard "Finish setup" banner | FL-1 | A unit test over the state variants |
 | FL-6 | i18n: de, fr, es and it for `app.muon.setup.*` and `app.muon.add_printer.*`; convert the Muon screens touched here to `$t`; add `app.general.confirm.enter_password` and `app.general.btn.connect` | FL-3, FL-4 | `npm run i18n-extract` reports no missing keys for these namespaces |
-| FL-7 | Add `app.muon3d.com` to the host blacklist in `public/config.json` and `server/config.json`, so app.muon3d.com doesn't probe itself for 5 s at startup | – | Loading app.muon3d.com shows no 5 s wait |
+| FL-7 | Add the console hosts, `app.muon3d.com` and `control.muon3d.com`, to the host blacklist in `public/config.json` and `server/config.json`, so the console doesn't probe itself for 5 s at startup | – | Loading the console shows no 5 s wait |
 | FL-8 | Make `useHotspotCheck` a pure origin read with no lifecycle hook (`isHotspotOrigin()`: only `10.42.0.1`), and stop the hotspot card's QR from saying `T:nopass` when the key is redacted. Draw the join QR only for an open hotspot (`security_enabled === false`); never put a key in a Fluidd QR (07 S1). Ships with MuonOS#300 (KAN-376). | – | `HotspotManagerCard.spec.ts` extended; passes |
 | FL-9 | Rebind `auxAxios`'s adapter and `Authorization` on each request from `Vue.$httpClient`, so the Aux client works over Iroh and carries auth. (Routing it through `$httpClient` doesn't work: the generated client drops `basePath` when the instance has a `baseURL`.) Stop `AddInstanceDialog` verification going over Iroh. Make the Iroh adapter reject non-2xx responses, as axios's `settle()` does. | – | A cloud-activated printer's Wi-Fi card loads, checked on a linked unit; a 400 over the Iroh transport rejects |
 
@@ -123,9 +123,10 @@ Then         QA-2 → phase 1 done
 
 | ID | Repo | Package |
 |---|---|---|
-| BT-1 | MuonOS | The `muon-setup-ble` daemon, GATT service, SPAKE2 and knob confirm, advertising windows, the GATE-1 declaration, coexistence tests (03 §8) |
-| BT-2 | Moonraker | The `bluetooth` caller kind through the daemon's Unix socket (SO_PEERCRED) |
-| BT-3 | Fluidd | "Find nearby" on app.muon3d.com (Web Bluetooth, Chrome and Edge), running the same screens over the BLE transport |
+| BT-1 | muon-link, MuonOS | Iroh_BLE's `blelink-bluer` peripheral inside muon-link, the advertising windows, unclaimed gating, the setup ALPN (`provision/1`), the GATE-1 declaration, and coexistence tests (03 §8) |
+| BT-2 | muon-link, Moonraker | muon-link reports the transport of each connection; `muon_setup` maps a BLE setup peer to caller kind `bluetooth` (03 §8) |
+| BT-3 | Fluidd | "Find nearby" on control.muon3d.com (Web Bluetooth through `blelink-wasm`, Chrome and Edge), running the same screens over Iroh |
+| BT-4 | muon3d-app | "Find nearby" in the Muon3D app through `blelink-ffi` |
 | OR-3 | OrcaSlicer | Hotspot spotting |
 
 ## 5. Jira mapping

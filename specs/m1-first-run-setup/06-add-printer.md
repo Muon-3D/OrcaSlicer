@@ -1,6 +1,6 @@
 # 06 · "Add printer" in every app
 
-Every app has exactly one entry point, **Add printer**. The apps are the printer's own Fluidd, app.muon3d.com and OrcaSlicer, and later the Muon3D phone app. The phone app follows the same routing table, but it shows setup on its own screens and claims `driver=app` instead of opening `/setup`.
+Every app has exactly one entry point, **Add printer**. The apps are the printer's own Fluidd, control.muon3d.com and OrcaSlicer, and later the Muon3D phone app. The phone app follows the same routing table, but it shows setup on its own screens and claims `driver=app` instead of opening `/setup`.
 
 It detects what it can, then routes the owner to the right next step. When detection finds nothing, it asks "What does your printer's screen show?", because the panel always shows the next step. No app ever stops at "No printers found".
 
@@ -73,7 +73,7 @@ find ──(pick a printer)──▶ setup redirect | add instance | link (code)
    - The link status text stays as it is today.
 5. **Hotspot banner.** If `location.hostname === '10.42.0.1'`, the banner in §1 sits above the list. Use FL-8's `isHotspotOrigin()`, a pure same-origin check.
 
-### 2.4 app.muon3d.com (https)
+### 2.4 control.muon3d.com (https)
 
 - **No search.** The browser blocks an https page from reaching `http://` LAN hosts, so the dialog opens at **screen**, with the line "This page can't search your network, so tell us what the printer's screen shows."
 - **Phase 2 (Chrome and Edge only).** A **Find nearby** button uses Web Bluetooth ([03-printer-os.md §8](03-printer-os.md#8-phase-2-bluetooth)). Hide it when `navigator.bluetooth` is missing.
@@ -84,7 +84,7 @@ The fixes themselves are in [10-work-plan.md](10-work-plan.md).
 
 - **Cloud base URL (FL-2).**
   - Account calls currently go to `window.location.origin`, because `envPrefix: 'VUE_'` drops `VITE_MUON_CLOUD_URL` and `setCloudBaseUrl` is never called.
-  - On any origin other than app.muon3d.com, the default must become `https://app.muon3d.com`.
+  - On any origin other than the console's, the default must become the console host: `https://control.muon3d.com` after the KAN-414 cutover, `https://app.muon3d.com` until then.
   - The console API must then accept CORS from any origin for `/v1/*`, with bearer-token auth and no cookies (CON-1).
 - **The link endpoints Fluidd already calls.**
   - These are `GET /server/muon/link` and `POST /server/muon/link/start`.

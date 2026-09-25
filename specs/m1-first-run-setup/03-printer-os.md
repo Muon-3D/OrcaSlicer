@@ -285,7 +285,7 @@ Errors come back as `409 {"error": "<sentence>"}`. Nothing is pushed, so callers
 
 **Open questions for the connectivity owner:**
 
-- **LINK-2 vs PR #24.** LINK-2 has the printer mint an 8-character Crockford code with a lifetime and a 3-attempt cap. PR #24 has the orchestrator mint a digits-only code, and muon-link enforces nothing.
+- ~~**LINK-2 vs PR #24.**~~ **Settled 25 Sep (ADR 0026, KAN-405):** LINK-2 now follows the console. The orchestrator mints a 6-digit code valid for 600 s, and muon-console limits failed claims and reissues a code after a decline. muon-link still enforces nothing, and doesn't need to. LINK-3 (the client-key comparison on the panel) is unchanged and is KAN-415.
 - **LINK-4 can't work with orchestrator-made codes.** There's no code without internet.
 - **`/link/confirm` has no proof of a knob press** (ML-2).
 
@@ -323,12 +323,15 @@ Errors come back as `409 {"error": "<sentence>"}`. Nothing is pushed, so callers
 
 ## 8. Phase 2: Bluetooth
 
-**This contradicts MuonOS `docs/connectivity/SPEC.md:1077-1080`** (AP-10: Bluetooth "explicitly not built"). Phase 2 needs that SPEC amended first. The design stays as written, so phase 1 doesn't block it:
+**Decided 25 Sep: phase 2 uses Iroh_BLE** ([Muon-3D/Iroh_BLE](https://github.com/Muon-3D/Iroh_BLE), Harry's clean-room BLE transport for Iroh; Muon_Internal_Documentation ADR 0027, KAN-402). AP-10 in MuonOS `docs/connectivity/SPEC.md` now says so (MuonOS#317). The earlier `muon-setup-ble` design (a GATT service carrying JSON-RPC, SPAKE2, AES-GCM) is dropped: Iroh already authenticates both ends with the endpoint keys, so a second key exchange adds nothing.
 
-- **When it listens.** A `muon-setup-ble` daemon advertises only while setup is incomplete, or while "Add a phone or computer" is open.
-- **What it offers.** One GATT service carrying `muon_setup`'s JSON-RPC methods.
-- **Security.** SPAKE2, keyed with a 6-digit code shown on the panel, AES-GCM, a knob confirmation before the first write, and Wi-Fi secrets only over an encrypted session.
-- **Plumbing.** It reaches Moonraker over a Unix socket checked with SO_PEERCRED. It's a GATE-1 listener, declared in `listeners.d`.
+- **Transport.** muon-link on the printer runs Iroh_BLE's BlueZ peripheral (`blelink-bluer`) beside its IP transports. A phone (the Muon3D app, through `blelink-ffi`) or a Chromium browser (`blelink-wasm`) opens an ordinary Iroh connection over BLE. The connection moves to Wi-Fi or the relay later without dropping.
+- **When it listens.** It advertises only while setup is incomplete, or while "Add a phone or computer" is open. Unclaimed printers accept only the setup protocol over BLE (Iroh_BLE's `EndpointHooks` gating).
+- **What it carries.** `muon_setup`'s methods, over an ALPN of their own (Iroh_BLE's planned `provision/1`, not started). The phone learns the printer's EndpointId from the panel QR code before it trusts the connection.
+- **Caller class (new, blocking).** A Bluetooth peer arrives through muon-link, so today S5 would class it as `remote` and make it read-only. muon-link must tell Moonraker which transport a connection used, and `muon_setup` must map a BLE setup peer to caller kind `bluetooth` with hotspot rights while setup isn't complete. That fact must come from muon-link, never from a claim by the client.
+- **Knob confirmation** before the first write, as on the other paths.
+- **Still open in Iroh_BLE:** `HELLO` authentication (a stranger in range can squat a known EndpointId's route, which is denial of service, not access), a first run on real radios, and L2CAP in the phone drivers.
+- **Bluetooth SIG qualification** is still owed for the product, about $12k per design (Iroh_BLE PLAN §7). The clean-room licence doesn't remove it.
 - **Prerequisite.** Coexistence tests: AP, station and BLE together.
 
 ## 9. Bench measurements (add to KAN-329)

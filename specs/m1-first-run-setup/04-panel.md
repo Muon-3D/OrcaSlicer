@@ -223,7 +223,7 @@ P12 renders `remote.link`, which is muon-link's `LinkPhase` ([02-setup-api.md §
 - **`code`:**
   - The code in large mono digits, grouped in threes. Handle any length.
   - A QR of `remote.link.url`, exactly as given.
-  - "Scan, or enter it at / **app.muon3d.com**".
+  - "Scan, or enter it at / **control.muon3d.com**".
   - `ArcProgress` counts down to `expires_at`. `muon_setup` renews the code after that.
 - **`offer`:** a `Modal` with `weightedCommit`: "Link Walnut to / **jed@example.com**?", with the authority key's short form (`fingerprint`, shown as `9f3c 1a7b e2d0 4c11`) underneath (LINK-3).
   - Focus starts on **Cancel**.

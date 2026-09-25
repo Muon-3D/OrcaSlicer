@@ -10,7 +10,7 @@ This file defines what setup is: the ways into it, the steps, and the rules that
 |---|---|---|
 | E1 | **At the printer.** Switch it on. | If `setup.state` isn't `complete`, MuonUI opens setup at the cursor instead of the home screen. |
 | E2 | **With a phone.** Scan the QR code on the panel. | The QR code joins the phone to the printer's hotspot. The phone's captive-portal check then opens `http://10.42.0.1/setup`, which is the `/setup` route of the printer's own Fluidd. |
-| E3 | **From an app.** Choose "Add printer" in app.muon3d.com, the printer's Fluidd, or OrcaSlicer. | The app detects what it can and routes the owner ([06-add-printer.md](06-add-printer.md)). A printer that isn't set up is always routed into this flow. |
+| E3 | **From an app.** Choose "Add printer" in control.muon3d.com, the printer's Fluidd, or OrcaSlicer. | The app detects what it can and routes the owner ([06-add-printer.md](06-add-printer.md)). A printer that isn't set up is always routed into this flow. |
 | E4 | **Finish setup.** The card on the panel home screen or the Fluidd dashboard. | It runs only the chosen skipped step, then returns. |
 | E5 | **Recovery.** A set-up printer loses its network, and the hotspot comes back (AP-4, KAN-347). | A phone that joins the hotspot gets the same `/setup` page, in recovery mode, with **Change Wi-Fi**. |
 
@@ -141,7 +141,7 @@ phone S7 "Last steps at the printer" → panel P13 Ready to print → finish
 phone S8 Done: address, "Open Walnut", "the hotspot turns off in 15 minutes"
 ```
 
-### 4.3 From app.muon3d.com
+### 4.3 From control.muon3d.com
 
 ```
 Add printer → "What does your printer's screen show?"
