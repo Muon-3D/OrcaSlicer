@@ -4,7 +4,7 @@ This page tracks the work packages in [10-work-plan.md](10-work-plan.md). The co
 
 Agents: the coordinator can't receive messages from you. Tell it where you are by pushing branches and opening PRs whose titles start with the package ID. Put questions in the PR body under **Spec questions**. **Link the spec commit you built against** (10 §1 rule 7), and read the log at the end of this page and [fixtures/README.md](fixtures/README.md) for anything newer.
 
-**Last updated:** 26 Sep 2026, 14:50 UTC. Most of the first wave merged overnight:
+**Last updated:** 26 Sep 2026, 17:53 UTC. Most of the first wave merged overnight:
 
 - **Moonraker `master` (`935c72c`):** MR-1, MR-2, MR-4, MR-7, MR-9 and the floor PR.
 - **Fluidd `develop` (`d16bca0`):** FL-1, FL-7, FL-8 and FL-9.
@@ -106,7 +106,9 @@ Still blocked: MR-5 (on #20), UI-2 (on MR-3, #39 and #31), UI-3 (on MR-5 and OS-
 | [Muon-3D/MuonOS#174](https://github.com/Muon-3D/MuonOS/pull/174) (draft): region routes | OS-2 and MR-3's region step. Its `/setup` routes and `setup.toml` are replaced by OS-7. Needs a keyed C3 run and the human KAN-351 check. |
 | [Muon-3D/MuonOS#300](https://github.com/Muon-3D/MuonOS/pull/300): hotspot `security_enabled` (KAN-376) | OS-5 and FL-8. Its C3 run passed, but it conflicts with `main`. FL-8 was meant to ship with it and is already pinned (#323), so merge `main` into #300 and land it next. |
 | [Muon-3D/MuonOS#305](https://github.com/Muon-3D/MuonOS/pull/305): GATE-1 listener declarations | OS-1. |
-| [Muon-3D/muon-link#27](https://github.com/Muon-3D/muon-link/pull/27) (sealed alerts), [#26](https://github.com/Muon-3D/muon-link/pull/26) (mobile binding) | Neither touches `/link/*`, as far as the titles show. Not checked against the spec. |
+| [Muon-3D/muon-link#27](https://github.com/Muon-3D/muon-link/pull/27) (sealed alerts, ADR 0028) | Adds `GET /alerts` and `POST /alerts/clear` to the admin endpoint, and unlinking clears the subscriptions. Checked on 26 Sep: `/link/*` is unchanged. MR-6's allow-list forwards only `GET /link`, `start` and `cancel`, so the new routes stay off the LAN. OS-10's `:100` location exposes them to the panel only, as intended. |
+| [Muon-3D/muon-link#26](https://github.com/Muon-3D/muon-link/pull/26) (mobile binding, draft) | Not checked against the spec. |
+| [Muon-3D/OrcaSlicer#7](https://github.com/Muon-3D/OrcaSlicer/pull/7): lift to Z6 after the M1 purge line | Not setup work. It bumps the Muon3D vendor version to `02.03.00.13`, one past OR-1's `.12`. |
 | [Muon-3D/muon3d-app#5](https://github.com/Muon-3D/muon3d-app/pull/5) (first-run setup: join the hotspot, render `muon_setup`) and [#8](https://github.com/Muon-3D/muon3d-app/pull/8) (the Android emulator test of that flow), KAN-390 | The `app` driver kind, S12 (the hotspot key stays in memory only) and R17. Both closed on 26 Sep around 14:49. **Not checked against the spec**: this coordinator can't read that repo. |
 
 ## Spec changes since v1
