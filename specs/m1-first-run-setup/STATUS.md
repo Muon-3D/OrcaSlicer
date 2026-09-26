@@ -4,11 +4,11 @@ This page tracks the work packages in [10-work-plan.md](10-work-plan.md). The co
 
 Agents: the coordinator can't receive messages from you. Tell it where you are by pushing branches and opening PRs whose titles start with the package ID. Put questions in the PR body under **Spec questions**. **Link the spec commit you built against** (10 §1 rule 7), and read the log at the end of this page and [fixtures/README.md](fixtures/README.md) for anything newer.
 
-**Last updated:** 26 Sep 2026, 12:59 UTC. Most of the first wave merged overnight:
+**Last updated:** 26 Sep 2026, 13:01 UTC. Most of the first wave merged overnight:
 
 - **Moonraker `master` (`935c72c`):** MR-1, MR-2, MR-4, MR-7, MR-9 and the floor PR.
 - **Fluidd `develop` (`d16bca0`):** FL-1, FL-7, FL-8 and FL-9.
-- **MuonOS `main`:** OS-5, OS-6 and OS-7, plus the pin bumps for Moonraker (with the floor pairing) and Fluidd.
+- **MuonOS `main`:** OS-5, OS-6 and OS-7, plus the pin bumps for Moonraker (with the floor pairing) and Fluidd. OS-1 followed at 13:00, so hotspot clients now reach only the printer (D11).
 - **muon-link:** #24 and ML-1.
 - **MuonUI:** UI-1, into #31's branch.
 
@@ -18,7 +18,7 @@ An audit of the merged code found gaps. Issues are turned off in these repos, so
 
 1. **SEC-8 Level 1 isn't enforced in setup yet (security).** On Moonraker `master`, after `finish`, a LAN or hotspot browser can still rename a Protected printer and skip `ready`. It's item 1 of the Moonraker follow-ups. It needs an agent, and it should go in before the next Moonraker pin bump.
 2. **Don't promote an image with OS-5 until it can finish setup (new).** Since #314 and #320 merged, a unit that `muon_setup` stores as `new` keeps its hotspot up, and the owner's "off" is ignored, until setup finishes. But no image can finish it yet: UI-1 isn't pinned and FL-3 isn't built. That hits fresh and factory-reset dev units on `latest` now (workaround: `POST /server/muon/setup/language`, then `finish`, from the LAN). It would also hit any field unit that migration misses, such as an Ethernet-only unit driven from OrcaSlicer and never linked. The spec now adds job history and uploaded G-code as migration signals (01 §7), and OS-9 must carry UI-1 or FL-3 before promotion.
-3. **C3 runs are owed on merged PRs.** #308, #313, #314, #315 and #320 merged on a waiver from Jack that is only relayed in the PR bodies. The runs must happen before beta or stable, and Jack should record the waiver himself. #312 is waiting on the same thing.
+3. **C3 runs are owed on merged PRs.** #308, #312, #313, #314, #315 and #320 merged without them. For all but #312, a waiver from Jack is relayed in the PR bodies. The runs must happen before beta or stable, and Jack should record the waiver himself.
 4. **KAN-341's AP-4.** OS-5 (MuonOS#314) merged, so a set-up printer's hotspot now turns off once the printer is on a network. That reverses KAN-341's "on unless disabled". If Jack hasn't agreed, record his answer on KAN-341.
 5. **The region and Wi-Fi chain is waiting on device evidence.** The panel's network screens (UI-2) come after MuonUI#39 and #31, and #39 needs MuonOS#210. OS-2 builds on #174. Each of #174 and #210 waits on a C3 run that only a person can do, and #174 also needs the human KAN-351 check. Both now conflict with `main`.
 6. **MuonUI#31's C3 gate.** The old record covered a `SetupView` that has since been replaced. Is an unkeyed run of the region prompt and the REGION card enough to merge it?
@@ -34,7 +34,7 @@ Closed since the last update:
 
 - **Moonraker:** the SEC-8 follow-up first, then the migration signals (item 8), then the rest in any order. MR-6 #20 goes in once it's fixed; MR-5 needs it. MR-3 is the next package on the critical path.
 - **MuonOS pin bumps:** the next Moonraker bump carries the SEC-8 follow-up and #20. If #20 adds `/server/muon/link/start` to `PROTECTED_PREFIXES` and MuonOS mirrors that list, update the mirror in the same bump. The next Fluidd bump carries #19 and the follow-ups.
-- **MuonOS:** #312 (OS-1) was waiting for a Fluidd that serves `/setup`; #323 pinned one. #321 (OS-2) and #322 (OS-3) sit on #174 and #210.
+- **MuonOS:** #300 next (its C3 passed; merge `main` in). #321 (OS-2) and #322 (OS-3) sit on #174 and #210, so they follow those.
 - **MuonUI:** #39 → #31 → UI-2. UI-4 can be built on #31's branch now.
 
 ## Packages
@@ -55,7 +55,7 @@ Closed since the last update:
 
 | Package | PR | State | Notes |
 |---|---|---|---|
-| OS-1 | [#312](https://github.com/Muon-3D/MuonOS/pull/312) @ `d7e48c5` | **Code done**; waiting on C3 | Every review item is fixed: an `inet` forward chain with policy drop that loads before NetworkManager, the new `10-ap-isolate` match, `10.42.0.1/24`, `ipv6.method=disabled`, `ap-isolation=1`, and the migration of persisted profiles. The Fluidd gate is met by #323. Tests and a real-nginx run pass. PR policy is red only for C3 (decision 3). Three small non-blocking notes. |
+| OS-1 | [#312](https://github.com/Muon-3D/MuonOS/pull/312) | **Merged** 26 Sep 13:00; C3 owed | Every review item was fixed: an `inet` forward chain with policy drop that loads before NetworkManager, the new `10-ap-isolate` match, `10.42.0.1/24`, `ipv6.method=disabled`, `ap-isolation=1`, and the migration of persisted profiles. The Fluidd gate is met by #323. Tests and a real-nginx run pass. It merged with PR policy red for C3 (decision 3). Three small non-blocking notes are in the [review](https://github.com/Muon-3D/MuonOS/pull/312#issuecomment-5846467230). |
 | OS-2 | [#321](https://github.com/Muon-3D/MuonOS/pull/321) @ `f83879b`, on #174 | Two fixes | All four items are there. Hold the guard until the agent exits, not until the timeout; parse the reason from more than the last stderr line. CI is red only for C3. |
 | OS-3 | [#322](https://github.com/Muon-3D/MuonOS/pull/322) @ `9eee473`, on #210 | **Changes needed** | gitleaks flags two fake test values, so CI never ran the tests. **The join reason is read after NetworkManager resets it to 0**, so a wrong password would come back as `timeout`. Map it from nmcli's own failure line instead, and check on a unit. Also: retry a hidden join once, bound the uplink check to 5 s, and read the hub from the agent config. |
 | OS-5 | [#314](https://github.com/Muon-3D/MuonOS/pull/314) | **Merged** 26 Sep 10:55 | Follow-ups: the end-of-run re-check snapshots after deciding, so a change made while it decides is lost (reproduced). See also decisions 2 and 4. |
@@ -95,7 +95,7 @@ Every dependency listed in 10 for these packages is met:
 | **FL-5** (the Dashboard banner) | FL-1 is merged. |
 | **FL-3** (the phone screens) | FL-1 is merged. It can build against the fixtures now and finish once MR-3 lands. |
 
-Still blocked: MR-5 (on #20), UI-2 (on MR-3, #39 and #31), UI-3 (on MR-5 and OS-10), FL-2 (on CON-1), OS-4 (on OS-3), OS-8 (on the hardware team), OS-9 (on the UI and FL packages), and QA-1 (on OS-1 and a dev build with MR-3).
+Still blocked: MR-5 (on #20), UI-2 (on MR-3, #39 and #31), UI-3 (on MR-5 and OS-10), FL-2 (on CON-1), OS-4 (on OS-3), OS-8 (on the hardware team), OS-9 (on the UI and FL packages), and QA-1 (OS-1 is in; it needs a dev build with MR-3).
 
 ## In-flight work that overlaps the spec
 
