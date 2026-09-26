@@ -12,7 +12,7 @@ Agents: the coordinator can't receive messages from you. Tell it where you are b
 - **muon-link:** #24 and ML-1.
 - **MuonUI:** UI-1, into #31's branch.
 
-An audit of the merged code found gaps. Issues are turned off in these repos, so the lists are comments on the merged PRs: [Moonraker](https://github.com/Muon-3D/Moonraker/pull/22#issuecomment-5846417945), [Fluidd](https://github.com/Muon-3D/Muon3D_Fluidd/pull/17#issuecomment-5846418769) and MuonOS (on #314). The spec took the fixes at `aa0fe2f` and in today's later commit.
+An audit of the merged code found gaps. Issues are turned off in these repos, so the lists are comments on the merged PRs: [Moonraker](https://github.com/Muon-3D/Moonraker/pull/22#issuecomment-5846417945), [Fluidd](https://github.com/Muon-3D/Muon3D_Fluidd/pull/17#issuecomment-5846418769) and [MuonOS](https://github.com/Muon-3D/MuonOS/pull/314#issuecomment-5846470331). The spec took the fixes at `aa0fe2f` and in today's later commit.
 
 ## Decisions needed from the owner
 
@@ -32,7 +32,7 @@ Closed since the last update:
 
 ## Merge order from here
 
-- **Moonraker:** the SEC-8 follow-up first, then the other follow-ups in any order. MR-6 #20 goes in once it's fixed; MR-5 needs it. MR-3 is the next package on the critical path.
+- **Moonraker:** the SEC-8 follow-up first, then the migration signals (item 8), then the rest in any order. MR-6 #20 goes in once it's fixed; MR-5 needs it. MR-3 is the next package on the critical path.
 - **MuonOS pin bumps:** the next Moonraker bump carries the SEC-8 follow-up and #20. If #20 adds `/server/muon/link/start` to `PROTECTED_PREFIXES` and MuonOS mirrors that list, update the mirror in the same bump. The next Fluidd bump carries #19 and the follow-ups.
 - **MuonOS:** #312 (OS-1) was waiting for a Fluidd that serves `/setup`; #323 pinned one. #321 (OS-2) and #322 (OS-3) sit on #174 and #210.
 - **MuonUI:** #39 → #31 → UI-2. UI-4 can be built on #31's branch now.
@@ -43,7 +43,7 @@ Closed since the last update:
 
 | Package | PR | State | Notes |
 |---|---|---|---|
-| MR-1 | [#22](https://github.com/Muon-3D/Moonraker/pull/22) | **Merged** 26 Sep | Follow-ups 1 (SEC-8), 3, 5, 6 and 7 are in the [list](https://github.com/Muon-3D/Moonraker/pull/22#issuecomment-5846417945). |
+| MR-1 | [#22](https://github.com/Muon-3D/Moonraker/pull/22) | **Merged** 26 Sep | Follow-ups 1 (SEC-8), 3, 5, 6 and 7 are in the [list](https://github.com/Muon-3D/Moonraker/pull/22#issuecomment-5846417945). [Item 8](https://github.com/Muon-3D/Moonraker/pull/22#issuecomment-5846470781) asks for the new migration signals (job history, uploaded G-code); do it second, after SEC-8. |
 | MR-9 | [#23](https://github.com/Muon-3D/Moonraker/pull/23) | **Merged** into #22 | Follow-up 2: an Aux timeout answers 500 rather than 503. |
 | MR-2 | [#24](https://github.com/Muon-3D/Moonraker/pull/24) | **Merged** 26 Sep | |
 | MR-4 | [#26](https://github.com/Muon-3D/Moonraker/pull/26) | **Merged** 26 Sep | The blocking bug is fixed: it now judges an update from Aux. |
