@@ -65,17 +65,18 @@ find ──(pick a printer)──▶ setup redirect | add instance | link (code)
 
 1. **The mDNS feed.** Read `${BASE_URL}muon/lan-printers.json` first. `config/discoverLanInstances` already fetches it (KAN-364). Every entry in it is a set-up printer on the LAN.
 2. **The IP sweep.** Then run the existing IP sweep (`discovery.ts`), unchanged except that `probe()` now reads `identity.setup`.
-3. **Merge.** Merge the two lists by `identity.fingerprint`, falling back to the host.
+3. **Merge.** Merge the two lists by `identity.endpoint_id` when both entries have one, then `identity.fingerprint`, falling back to the host.
 4. **Rows.** Each row shows the name (`display`), the host, and a badge:
    - `setup` is `new` or `in_progress`: **New · needs setup** (accent).
    - `complete` and linked to this account: **In your account**.
    - `complete`: **Ready**.
    - The link status text stays as it is today.
 5. **Hotspot banner.** If `location.hostname === '10.42.0.1'`, the banner in §1 sits above the list. Use FL-8's `isHotspotOrigin()`, a pure same-origin check.
+6. **Opening a found printer** (Fluidd#19). Open it at the first of its addresses that this browser can reach. Before counting an address as reachable, check that the identity it answers with is the same printer: every M1 answers on `10.42.0.1` to a device on its own hotspot, so a laptop on one printer's hotspot and another's LAN could otherwise open the wrong one. A 503 from `/server/muon/identity` means it's reachable but starting.
 
 ### 2.4 control.muon3d.com (https)
 
-- **No search.** The browser blocks an https page from reaching `http://` LAN hosts, so the dialog opens at **screen**, with the line "This page can't search your network, so tell us what the printer's screen shows."
+- **Search where the browser allows it.** Most browsers block an https page from reaching `http://` LAN hosts, and there the dialog opens at **screen**, with the line "This page can't search your network, so tell us what the printer's screen shows." Chromium's local-network access lets `discovery.ts` sweep from https, and the console's nearby list (`/v1/links/nearby`, with `local_addrs`) adds printers already linked to the account. That list has no fingerprint, so merge it by EndpointId, then by host. **This section is behind the code on `develop`; FL-4 brings it up to date.**
 - **Phase 2 (Chrome and Edge only).** A **Find nearby** button uses Web Bluetooth ([03-printer-os.md §8](03-printer-os.md#8-phase-2-bluetooth)). Hide it when `navigator.bluetooth` is missing.
 
 ### 2.5 Things this dialog depends on

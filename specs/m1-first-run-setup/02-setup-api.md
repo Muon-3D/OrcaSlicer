@@ -78,11 +78,12 @@ Any refused action returns HTTP 403 with the `ServerError` message `"muon_setup:
 
 `internal` callers (other components) may do everything except `reset`.
 
-**SEC-8 Level 1 (Moonraker#21, merged 25 Sep).** When `muon_floor.protection_level()` is Protected, and `state` is `complete`, refuse the step writes (`network`, `name`, `remote`, and a `ready` skip) with 403 to `lan` and `hotspot` callers, which have no identity in SEC-8's sense. The panel and internal calls are unaffected, and `remote` callers are read-only here anyway.
+**SEC-8 Level 1 (Moonraker#21, merged 25 Sep).** When `muon_floor.protection_level()` is Protected, and `state` is `complete`, refuse **every write except `driver` and `card/dismiss`** with 403 to `lan` and `hotspot` callers, which have no identity in SEC-8's sense. That covers `network`, `name`, `remote`, `clock`, `timezone`, a `ready` skip and `network/ca_cert`. Check it in `write()` (and in `clock`'s own handler) after the state is resolved, because it depends on `complete`. The panel and internal calls are unaffected, and `remote` callers are read-only here anyway.
 - **Before `complete`, setup stays open at either level.** A printer in setup has no owner identity yet, and being on the hotspot is the trust model.
 - **Reads stay open.** Fluidd's card, discovery and the phone page need them.
 - **Don't add `/server/muon/setup` to `PROTECTED_PREFIXES`,** which would block reads and in-setup writes too. Check `muon_floor.protection_level()` in the caller check instead, and give the 403 the message `"muon_setup: protected"`.
 - **`/server/muon/link/start` goes into `PROTECTED_PREFIXES`** (MR-6), because starting a link is authority.
+- **So does `/server/muon/identity/name`** (an MR-9 follow-up). Otherwise a LAN rename at Level 1 just goes around `muon_setup`'s `name`.
 
 **HTTP write hygiene (CSRF / DNS rebinding).** Refuse any HTTP `POST` in this component with 415 unless it has `Content-Type: application/json`. The one exception is `network/ca_cert`, which requires `multipart/form-data` instead. Refuse it with 403 if the `Host` header isn't one of these:
 
@@ -241,7 +242,7 @@ The optional `country` query adds that country's time zones.
    - `region_confirmed` is `true` when the market is `locked` or `none`, or when `declared_country` is already set and equals `detected_country`. Otherwise it's `false`.
    - `network.status` becomes `done` only when `region_confirmed` is `true`. Until then the cursor stays on `network`, and surfaces show the region line (§5.6a).
    - `update.status` to `pending` only if the internet check passed, an update exists and the clock is synced. Otherwise it is `hidden`.
-6. **Failure.** `network.error = {code, at_phase}`, the step stays `pending`, `op` is cleared, and nothing is kept: the Aux connection profile is deleted. The codes are `wrong_password`, `ssid_not_found`, `no_address`, `timeout`, `eap_failed`, `cert_invalid` and `unsupported_security`.
+6. **Failure.** `network.error = {code, at_phase, detail: {ssid}}`, where `detail.ssid` is the network that was tried (08's `{ssid}` comes from here). The step stays `pending`, `network.ssid` keeps what was last joined (or `null`), `op` is cleared, and nothing else is kept: the Aux connection profile is deleted. The codes are `wrong_password`, `ssid_not_found`, `no_address`, `timeout`, `eap_failed`, `cert_invalid` and `unsupported_security`.
 7. **`internet: "portal"`** (a guest network with a web sign-in page) is still `done`, because the address works on the LAN. It carries `error: {code: "portal_required"}` so the surfaces can warn and offer "Choose another network".
 8. **Never store or echo secrets.** `psk` and `eap.password` are never persisted by `muon_setup`, never logged (redact them in any debug dump), and never put in state or events. Only NetworkManager keeps them.
 
@@ -366,7 +367,7 @@ This follows KAN-321 Rev 11 and MuonUI#31: the region comes from the network the
   - **It moves the printer, so it refuses unless all of these hold:**
     - every earlier `required` item in manifest order is `done` (otherwise `invalid_step`), so the self-test can't run with the transport clips on;
     - Klipper defines `gcode_macro <macro>` at that moment (otherwise `invalid_step`, or `printer_not_ready` if Klipper can't say);
-    - print_stats `state` isn't `printing` or `paused` (`printer_busy`);
+    - print_stats `state` isn't `printing` or `paused` (`printer_busy`). If print_stats can't be read, refuse with `printer_not_ready`: this is the one guard before a move, so it never fails open;
     - Klippy is ready (`printer_not_ready`).
   - The item is `done` if the macro returns without error.
   - Otherwise it is `failed`, with `error: {code: "self_test_failed", message, detail: {gcode_error: "<Klipper's text>"}}`.
@@ -465,8 +466,9 @@ MuonOS ships the manifest at `ready_manifest` (`/usr/share/muon/setup/ready.json
 - `driver.kind` is `panel`, `phone`, `web` or `app`, and `bluetooth` in phase 2.
 - `steps.ready.items[].status` is `pending | done | failed | skipped | hidden`. `error` is `null`, `self_test_failed` or `interrupted` (`{code, at_phase}`).
 - For `op.kind == "ready_item"`, `op.item` is the item's `id`.
-- `driver.lapsed` is computed on read as `now - renewed > driver_lease`.
+- `driver.lapsed` is computed on read as `now - renewed > driver_lease`, for `phone`, `web` and `app` claims only. **A `panel` claim never lapses:** the panel is physically there and doesn't renew. Any write from the driver's `client_id` also counts as a renewal.
 - **Renewals aren't announced.** When a claim lapses, `muon_setup` sends `notify_muon_setup_changed` once, without changing `rev`, so the panel can show P8's lapse line.
+- **Computed fields don't bump `rev`.** A change in `hotspot`, `clock`, `region` or `capabilities` is announced with the same `rev`. Clients accept a notification whose `rev` equals the held one. Only a change to stored state (`state`, `cursor`, `driver`, `op`, `steps`, `card_dismissed`) bumps `rev`.
 - **`region`** carries every field of Aux `GET /region`, including `explanation` (free English text for logs; never parse or show it) and `enforcement`.
 - **Clients and `rev`.** A `GET` result, including the one after a reconnect, replaces the held state whatever its `rev`. `rev` ordering applies only between notifications and write results: ignore one whose `rev` is lower than the held state's.
 
@@ -475,7 +477,7 @@ MuonOS ships the manifest at `ready_manifest` (`/usr/share/muon/setup/ready.json
 - `GET /server/muon/identity` returns `name, source, derived_name, suffix, display, ssid, fingerprint, endpoint_id, setup`.
   - `endpoint_id` is the Iroh EndpointId, or `null` (KAN-403, Moonraker#27 and MuonOS#316).
   - `setup` is `new | in_progress | complete` from `muon_setup`, or `null` when `muon_setup` isn't configured. It reads `complete` while `muon_setup`'s boot check runs (01 §7). Apps use it to route a found printer ([06-add-printer.md](06-add-printer.md)).
-- `identity`, `identity/name` and `dev_mode` are registered in `__init__`, not after `_fetch_spec()` (MR-9). They answer 503 while Aux isn't answering (connection refused or timeout: HTTP 599, or 500 caused by a connection error). Aux's own errors keep their status.
+- `identity`, `identity/name` and `dev_mode` are registered in `__init__`, not after `_fetch_spec()` (MR-9). They answer 503 while Aux isn't answering, and Aux's own errors keep their status. Moonraker's `http_client` never reports 599: a refused connection, a timeout and a closed stream all come back as a 500 whose cause (`HTTPTimeoutError`, `HTTPStreamClosedError`, …) carries **no HTTP response**. So: a 500 with no response behind it (`getattr(exc.__cause__, "response", None) is None`) is 503; a 500 with a response is Aux's own. Test it with a real `HTTPTimeoutError`, not a faked 599.
 
 ## 8. Tests (minimum)
 
@@ -516,15 +518,17 @@ Add `tests/test_muon_setup.py` with fakes for `database`, `aux_api_proxy` and `k
 | Endpoint | Forwards to | Notes |
 |---|---|---|
 | `GET /server/muon/link` | `GET /link` | Returns the `LinkPhase` (§5.9). A 503 means muon-link isn't answering, and a 409 carries muon-link's `{"error"}` sentence. |
-| `POST /server/muon/link/start` | `POST /link/start` | Returns `connecting` at once. Fluidd's `startLanLink()` already polls until it sees `code`. |
+| `POST /server/muon/link/start` | `POST /link/start` | Returns `connecting` at once. Fluidd's `startLanLink()` already polls until it sees `code`. **When muon-link answers 409** (an offer is waiting, or the printer is already linked), `muon_link` reads `GET /link` and returns that phase with **200** if it's `offer` or `linked`; otherwise it keeps the 409. Fluidd calls this route directly, so this has to happen in `muon_link`, not `muon_setup`. |
 | `POST /server/muon/link/cancel` | `POST /link/cancel` | |
 
-**Confirm and unlink are never forwarded.** PR #20's tests assert this, following ADR 0018 and LINK-3. muon-link refuses `start` while an offer waits, so `muon_setup` never renews a code during `offer` (§5.9) and passes a 409 on `start` through as the current phase rather than an error. The panel calls muon-link's `POST /link/confirm`, `/link/cancel` and `/link/unlink` directly, through an nginx `/muon-link/` location on the loopback-only `:100` vhost (OS-10). Nothing is added to `FLOOR_PREFIXES` for linking.
+**Write hygiene.** Apply §3's HTTP rules (JSON content type; `Host`, and `Origin` if present, one of the printer's names or addresses; the upgrade request's `Host` for websocket calls) to `start` and `cancel`. Without them, a page visited on the LAN could start a link and read the code through DNS rebinding, or decline the owner's pending offer with a plain cross-site form.
+
+**Confirm and unlink are never forwarded.** PR #20's tests assert this, following ADR 0018 and LINK-3. muon-link refuses `start` while an offer waits, so `muon_setup` never renews a code during `offer` (§5.9) and treats a 409 on `start` as the current phase rather than an error (`muon_link` does the translation, above). The panel calls muon-link's `POST /link/confirm`, `/link/cancel` and `/link/unlink` directly, through an nginx `/muon-link/` location on the loopback-only `:100` vhost (OS-10). Nothing is added to `FLOOR_PREFIXES` for linking.
 
 **MR-6 adds to PR #20**, after it merges or as a follow-up PR:
 
 1. **Polling and events.** muon-link pushes nothing, so `muon_link` polls `GET /link`: every 1 s while the phase is `connecting`, `code` or `offer`, and every 30 s otherwise, stopping when nothing is subscribed. It emits `muon_link:link_changed` (clients receive `notify_link_changed`) when the phase object changes.
 2. **Python methods.** Add public async `status()`, `start()` and `cancel()` for `muon_setup` to call, so it doesn't make HTTP calls to itself.
-3. **Rate limit.** Allow at most 5 `start` calls per minute per caller IP. muon-link has no limit of its own.
+3. **Rate limit.** Allow at most 5 `start` calls per minute per caller IP, and answer the sixth with **429**. muon-link has no limit of its own. Calls from `muon_setup` in-process aren't limited.
 4. **Tests.** Extend `tests/test_muon_link.py` to cover polling cadence, change detection and the rate limit.
 

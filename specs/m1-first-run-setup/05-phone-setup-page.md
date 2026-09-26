@@ -138,8 +138,11 @@ export interface SetupClient {
   - The timeout is 10 s for every write. `network` answers at once and reports the region apply and the join by event.
 - **When a write gets no answer**, because of a network error or a timeout:
   - The page does **not** show a failure. It shows "Reconnecting to Walnut…", keeps the screen, and waits for the next state.
-  - If the state then shows the step done or an `op` running, it moves on.
-  - If the state shows the step still `pending` with no `op`, it shows "That didn't reach Walnut. Try again."
+  - **Did it arrive?** Judge against the state the page held when it sent the write (`sentRev`), never by the step's current status. A leftover address, `error` or `region_error` proves nothing: on a Wi-Fi change the old network still has an address, and on a retry the old error is still set. The write arrived if a later state (`rev > sentRev`):
+    - shows an `op` whose `id` the page hadn't seen before; or
+    - shows no `op`, but the fields the write touches differ from the state at `sentRev` (for `network`: `ssid`, `addresses` or `error`; for `region`: `region.declared_country` or `network.region_error`; for other steps: the step's `status` or `value`).
+  - If it arrived, the page moves on. If a later state shows neither, it shows "That didn't reach Walnut. Try again."
+  - Clear the "Reconnecting…" note on any fetched state or notification, not only on the next successful write.
 - **Driver renewal.** While `driver.client_id` is this page's ID and `document.visibilityState == "visible"`, post `driver` every 10 s. The `client_id` is a random ID made at page load from `crypto.getRandomValues` and kept in `sessionStorage` when available. Don't use `crypto.randomUUID`: it needs a secure context, and `http://10.42.0.1` isn't one.
 
 **The reconnect banner:**
@@ -168,7 +171,7 @@ Selection is a pure function, `screenFor(state, local) -> ScreenId`, in `src/ser
 6. The page hasn't claimed the driver yet → S1.
 7. Otherwise, by `cursor`:
    - `language` → S1 (unreachable after Start, which posts the language);
-   - `network` → S4r with the region line when `network.addresses` is non-empty and `network.region_confirmed` is `false`. This shows on every phone tab, not only the one that joined; when the panel drives, it shows P7a and the page shows S9. Otherwise S3;
+   - `network` → S4r with the region line when `network.addresses` is non-empty and `network.region_confirmed` is `false`, on whichever tab drives (a tab that hasn't claimed the driver still shows S1, by rule 6). When the panel drives, it shows P7a and the page shows S9. Otherwise S3;
    - `name`, `update` or `remote` → S5, or S6 if `remote.mode == "cloud"`;
    - `ready` → S7;
    - `finish` → S8.

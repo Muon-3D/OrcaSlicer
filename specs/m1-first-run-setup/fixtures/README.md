@@ -35,3 +35,5 @@ Copy the fixtures again whenever this log changes, and check the spec commit you
 |---|---|
 | 24 Sep, 15:40 | `state.03-region-apply.json` replaced by `state.04b-region-confirm.json` and `state.04c-region-apply.json`: the region is confirmed after the join. `region` became Aux `GET /region` as-is plus `market`; `options.region` became Aux `GET /region/options` as-is; `remote.link` became muon-link's `LinkPhase`. |
 | 25 Sep, 04:29 | `region` gained `explanation` and `enforcement` (every field of Aux `GET /region`). `steps.network` gained `region_error`. New `state.04d-region-apply-failed.json`. The `ready_item` op in `state.07` is now `{item, phase: "running", progress: null}`. `driver.kind` may be `app` (KAN-399). |
+| 25 Sep, 12:54 | `state.06` and `result.stale-rev`: `remote.link.url` is on `control.muon3d.com` (KAN-404). The host is illustrative; surfaces show whatever host `url` carries. |
+| 26 Sep, 12:48 | `state.05`: a failed join's `network.error` carries `detail.ssid`, the network that was tried. |

@@ -98,7 +98,7 @@ step.status:   pending ──▶ done ──(value changed later)──▶ done
 - **`driver`** is who is in charge: `panel`, `phone`, `web`, `app` (the Muon3D phone app) or `bluetooth` (phase 2).
   - It's advisory. Any allowed writer may write, and a write from a surface that isn't the driver makes that surface the driver.
   - Every write carries the state's `rev`. A write with an old `rev` gets `stale_rev` and the current state, so two screens can't overwrite each other without knowing.
-  - A phone, a computer or the app renews its claim every 10 s. The panel treats a claim older than 30 s as lapsed.
+  - A phone, a computer or the app renews its claim every 10 s, and any write from the claimant also renews it. Such a claim older than 30 s is lapsed. The panel's own claim never lapses (02 §6).
 - **Persistence.** Every change is saved before the event is sent ([02-setup-api.md §4](02-setup-api.md#4-persistence)). After a power loss, setup resumes at the same `cursor` on whichever screen picks it up.
 
 ## 4. Happy paths
@@ -184,7 +184,7 @@ Printers updated from firmware that had no setup flow MUST NOT be sent into setu
 
 If so, it writes `state: complete`, with every step `done` and `source: "migrated"`, and shows no card. It also writes the marker with Aux `POST /setup/complete {"by": "migrated"}`, retried every 30 s until Aux answers ([02 §4](02-setup-api.md#4-persistence)). Without the marker, H1 would keep the unit's hotspot up for good. Getting those units a region is KAN-330's separate, non-blocking prompt, not this flow.
 
-- **While the check can't finish** (Aux or muon-link isn't answering yet), `muon_setup` reports `complete` provisionally. It persists nothing and writes no marker, and it decides again as soon as they answer. A new printer then moves to `new`, and the panel's store watch sends it into setup ([04 §1](04-panel.md#1-architecture)). A field printer is never sent into setup by a slow boot.
+- **While the check can't finish** (Aux isn't answering yet), `muon_setup` reports `complete` provisionally. Only Aux blocks the decision: if muon-link hasn't answered within 30 s, the printer counts as not linked, so a stopped muon-link never delays a new printer's setup. It persists nothing and writes no marker, and it decides again as soon as they answer. A new printer then moves to `new`, and the panel's store watch sends it into setup ([04 §1](04-panel.md#1-architecture)). A field printer is never sent into setup by a slow boot.
 - **Factory QA must end with `muon3d-factory-reset`.** Otherwise a saved Wi-Fi network or Fluidd settings left from QA make a new unit look like one already in the field, and it skips setup.
 
 ## 8. Factory reset

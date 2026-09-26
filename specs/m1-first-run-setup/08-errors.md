@@ -5,7 +5,7 @@ Every domain error from `muon_setup` is `{ ok: false, error: { code, message, de
 - Fluidd: `app.muon.setup.error.<code>`;
 - MuonUI: `setup.error.<code>`.
 
-The copy below is the English source text. `{ssid}`, `{name}` and the other braces are named placeholders; don't concatenate strings.
+The copy below is the English source text. `{ssid}`, `{name}` and the other braces are named placeholders; don't concatenate strings. For join errors, `{ssid}` is `network.error.detail.ssid`, the network that was tried.
 
 Every error screen has **one primary action**. On the panel that is the press; on the phone it's the filled button. Secondary actions are optional.
 

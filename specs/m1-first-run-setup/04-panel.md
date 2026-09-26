@@ -37,7 +37,7 @@
 **Routing:**
 
 - Keep #31's check at mount, but read `setupStore.state` instead of Aux `/setup`.
-- Also watch the store. Whenever the state is `new` or `in_progress` and the route isn't `setup`, call `router.replace({name: 'setup'})`. This also covers a reset. **Exception:** never redirect away from `printing` while a print runs.
+- Also watch the store. Whenever the state is `new` or `in_progress` and the route isn't `setup`, call `router.replace({name: 'setup'})`. This also covers a reset. **Exceptions:** suspend every redirect while a print runs (UI-1 does this); and let the routes of P13's `panel_flow` items (the manifest's `flow` names) through while P13 has opened one, returning to `setup` when it finishes.
 - While on `/setup`, suppress `App.vue`'s global update prompt (lines 493–501) and its rollback notice; P10 covers updates.
 - While on `/setup`, also suppress the Klippy fault modal. A new unit's Klipper may not be ready, and setup doesn't need it before P13. At P13, a `macro` item that can't run because Klipper isn't ready shows the item's error instead.
 
@@ -60,7 +60,7 @@
 
 - Back is the existing **left-rail Back item at order 0**: `SideBackButton.vue` from #46, or the pattern in `SettingsView.vue`.
 - There is **no** press-and-hold Back. MuonUI has no long-press primitive, and a hold would clash with the global 5 s power-menu hold (`App.vue:342–347`, `622–634`).
-- P1 has no Back item.
+- P1 has no Back item, and nor does P8: a `goto` there would silently take the driver from the phone. **Continue here** is the only way to take over.
 
 **Haptics** (`src/haptics/profiles.ts`):
 
@@ -176,7 +176,7 @@ This follows KAN-321 Rev 11 and #31: the region comes from the network the print
 
 ### P8 · Following a phone (F)
 
-- **Shown while** `driver.kind` is `phone`, `web` or `app`, whether or not the claim has lapsed.
+- **Shown while** `driver.kind` is `phone`, `web` or `app`, whether or not the claim has lapsed. **Exception:** the region line wins. When the cursor is `network`, the network has an address, `region_confirmed` is `false` and the market is `picker`, the panel shows P7a (with `network.region_error`'s copy if set) whoever drives, so a reload or a takeover at the region line still shows it. Choose P7a from the state, not from local state.
 - **Content:** the title for the driver kind, then "<Step> · step n of N", with `ArcProgress`:
 
   | `driver.kind` | Title |
@@ -280,7 +280,7 @@ The app fallback copy points here: "Press the knob, then open Settings › Link 
 
 | QR | Payload | Notes |
 |---|---|---|
-| Wi-Fi join (P2) | `WIFI:T:WPA;S:<ssid>;P:<psk>;;` | Backslash-escape `\`, `;`, `,`, `:` and `"`. Always `T:WPA`. |
+| Wi-Fi join (P2) | `WIFI:T:WPA;S:<ssid>;P:<psk>;;` | Backslash-escape `\`, `;`, `,`, `:` and `"`. `T:WPA` whenever the hotspot has a key. If Aux `/wifi/ap/show` reports `security_enabled: false` (MuonOS#300), encode `WIFI:T:nopass;S:<ssid>;;` with no `P:`. Fluidd's hotspot card (FL-8) uses the same escaping. |
 | Setup page | `http://10.42.0.1/setup` | nginx redirects it to `/#/setup` (OS-1) |
 | Link (P12) | `remote.link.url` as given | The orchestrator sets it |
 | Printer address (P14) | `http://<ipv4>/` | Use the IP address, because Android doesn't always resolve `.local` |
