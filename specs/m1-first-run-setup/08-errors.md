@@ -29,8 +29,8 @@ Every error screen has **one primary action**. On the panel that is the press; o
 | Code | When | Copy (both surfaces) | Primary / secondary |
 |---|---|---|---|
 | `region_not_offered` | Aux `country-not-in-token` | "This printer is not registered for that country." (Rev 11) | Choose another region |
-| `region_apply_failed` | Aux `apply-failed`, `intersected` or `readback-mismatch` | "We could not apply that region." (Rev 11) | Try again / Choose another region. After 2 failures: Save a diagnostic bundle (KAN-378) |
-| `region_busy` | Aux reports `busy` | "The Wi-Fi radio is busy. Trying again…" (retried automatically once after 3 s) | Try again |
+| `region_apply_failed` | Aux `apply-failed`, `intersected`, `readback-mismatch`, `no-table`, `bad-table`, `no-fingerprint`, or a code this table doesn't know | "We could not apply that region." (Rev 11) | Try again / Choose another region. After 2 failures: Save a diagnostic bundle (KAN-378) |
+| `region_busy` | Aux reports `busy`, or the apply timed out (504) and `GET /region` doesn't show the requested country | "The Wi-Fi radio is busy. Trying again…" (retried automatically once after 3 s) | Try again |
 | `needs_reregistration` | Aux `no-token`, `unreadable-token`, `bad-token-format`, `bad-signature`, `unknown-serial`, `serial-mismatch` or `no-signing-key`. Today every unit is `no-signing-key`. | "This printer needs re-registering." (Rev 11) | Continue (channels 1–11 still work) |
 | `channel_not_permitted` | After a switch, the chosen network's channel still isn't allowed. Before joining, `regionPromptFor` handles this. | "That network is on a channel your printer is not set for." A locked unit adds "This printer is set for the United States. Contact support." | Choose another network |
 | `invalid_timezone` | The zone isn't valid for the country | – (the lists only offer valid ones) | – |

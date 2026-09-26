@@ -2,12 +2,14 @@
 
 **Repos:**
 
-- **`Muon-3D/MuonOS`** (checked at `main` `4d9f6e3`). The Aux API lives in `recipes/aux_api/files/aux_api/` and runs as FastAPI on `127.0.0.1:6789`, with its token in `/run/aux_api/token`. Its contract is `contracts/muon.aux-api/v2/openapi.json`.
+- **`Muon-3D/MuonOS`** (checked at `main` `4d9f6e3`; OS-5, OS-6 and OS-7 merged on 25–26 Sep, and `main` was re-audited at `972dc702`, so the **Today** notes in §1, §3 and §7 describe the tree before those packages). The Aux API lives in `recipes/aux_api/files/aux_api/` and runs as FastAPI on `127.0.0.1:6789`, with its token in `/run/aux_api/token`. Its contract is `contracts/muon.aux-api/v2/openapi.json`.
 - **`Muon-3D/muon-link`.** Its admin endpoint is on `127.0.0.1:7131`.
 
 Aux is published to Moonraker automatically: `aux_api_proxy` rebuilds `/server/aux/*` from `/openapi.json`. Any new route therefore appears there too.
 
 **The floor has two lists that must match.** The `:80` Fluidd server returns 403 for the floored Aux paths (`recipes/klipper_moonraker_fluidd/files/fluidd/fluidd.nginx.template:122-136`). `test_trusted_clients.py` requires `EXPECTED_FLOOR` to equal the pinned Moonraker's `FLOOR_PREFIXES` exactly and in order, and requires a `location ^~ … { return 403; }` for each entry. Every path added to the floor is added in **both** repos. The MuonOS half lands in the PR that bumps the Moonraker pin past the new entries, together with rows in `test_floor.py`'s `FLOOR_CASES` ([02 §1](02-setup-api.md#1-conventions-this-component-follows)).
+
+**A floored route never reaches `main` before its floor.** A MuonOS PR that adds an Aux route which must be floored merges only after the pin bump that floors it, or in the same PR. This applies to every such route, not only OS-7's. OS-6 merged 1 h 44 min before `/server/aux/time` was floored (26 Sep), and in that window `latest` builds let any LAN client set the clock.
 
 **Before you start:**
 
@@ -42,6 +44,7 @@ An **uplink** is `wlan0` **or** `eth0` connected. The **deadline** is the auto-o
 | H4 | The owner turns it on (Settings › Add a phone or computer, or the hotspot card) | **Up**. This writes `ap-hotspot-kept-on` and removes `ap-hotspot-disabled`. Turning it off removes `ap-hotspot-kept-on`, writes `ap-hotspot-disabled` and ends any pending deadline. |
 
 - **Use `ap-hotspot-kept-on`, never `ap-hotspot-requested`.** Firmware from MuonOS#37 to #212 (9–14 Sep) wrote `ap-hotspot-requested` from `POST /wifi/ap/up`, and KAN-341 left those files behind. Reading that name would keep those printers' hotspots on for good. It stays ignored.
+- **H1 needs a way to finish setup in the same image.** In an image that has H1 but neither the panel's setup (UI-1) nor the phone page's screens (FL-3), a unit stored as `new` keeps its hotspot up for good, and the owner's "off" is ignored. That covers fresh and factory-reset units, and any field unit that migration misses. Don't promote OS-5 to beta or stable without one of them (OS-9). On a `latest` dev unit, `POST /server/muon/setup/language` followed by `POST /server/muon/setup/finish` from the LAN completes setup.
 - **H3 changes KAN-341's default once setup is done.** It becomes "off while connected", which is the direction of MuonOS#193. Before setup, and after a factory reset, the default is on. Reversing KAN-341's AP-4 needs its owner's agreement (Jack).
 - **Deadlines.** A deadline is pending after `finish` (`auto_off`, 900 s) and for 15 minutes after each boot, so an owner can always reach a freshly booted printer. **`ap-hotspot-disabled` skips the boot grace**, so an owner's "off" survives a reboot while there's an uplink.
 - **New route `POST /wifi/ap/auto_off`** with `{ "after_s": 900 }` returns `{ "after_s", "auto_off_at" }`.
@@ -49,7 +52,7 @@ An **uplink** is `wlan0` **or** `eth0` connected. The **deadline** is the auto-o
   - A path unit re-runs the lifecycle when the file changes, and the lifecycle arms a transient timer (`systemd-run --on-active=<s>`) for the deadline.
   - It must be loopback-only. Moonraker#25 adds `/server/aux/wifi/ap/auto_off` to `FLOOR_PREFIXES`; the MuonOS pin bump adds it to the `:80` nginx 403 list and `EXPECTED_FLOOR`.
 - **What runs the lifecycle:** the dispatcher `20-ap-lifecycle` on `wlan0` **and `eth0`** events, the path unit, the deadline timer, and `muon-sta-watchdog.timer`.
-- **No lost triggers.** The lifecycle service is a oneshot, and systemd folds a path trigger that arrives during a run into that run. So at the end of each run, the script re-reads its inputs (the marker, the deadline file, the owner-choice files and the uplink state) and runs again if any changed. The result must not depend on the order in which the marker and the deadline are written. (`muon_setup` writes the marker first anyway: 02 §5.11.)
+- **No lost triggers.** The lifecycle service is a oneshot, and systemd folds a path trigger that arrives during a run into that run. So each pass snapshots its inputs (the marker, the deadline file, the owner-choice files and the uplink state) **before** it decides, and at the end compares them with what it reads then. If any differ, it runs again. A snapshot taken after deciding misses a change that lands while the script decides. The deadline the script writes itself doesn't count as a change (or costs one extra quiet pass). Test it by changing an input from inside the fake `nmcli device` call and from inside the fake `systemd-run`. The result must not depend on the order in which the marker and the deadline are written. (`muon_setup` writes the marker first anyway: 02 §5.11.)
 - **Changing Wi-Fi after setup** (E5, S10): after any successful join once `state` is `complete`, `muon_setup` calls `auto_off` again, so the hotspot stays up long enough for the phone to see the result.
 - **Station count.** `GET /wifi/ap/stations` returns `{ "up", "count", "auto_off_at" }`, where `auto_off_at` is a Unix time computed from the time left, or `null`. `muon_setup` reads it for `state.hotspot`, including `hotspot.auto_off_at`, which only the OS knows after a reboot or an owner's "off". `POST /wifi/ap/count` stays for MuonUI's existing contract.
 - **Channel following.** Once the uplink associates, the hotspot moves to the uplink's channel, which can be 5 GHz or DFS. Phones that support 5 GHz follow it. Record in QA-1 how long the drop lasts.
@@ -75,6 +78,8 @@ An **uplink** is `wlan0` **or** `eth0` connected. The **deadline** is the auto-o
    - be loaded before NetworkManager raises `ap0` at boot, and never be removed by a `down` event;
    - not depend on NetworkManager's firewall backend. With the iptables backend, NM puts its own `-i ap0 -s 10.42.0.0/24 -j ACCEPT` at the top of FORWARD on every activation, ahead of a jump added with `-C || -I 1`;
    - never block the hotspot's own access to `10.42.0.1` (DHCP, DNS, `:80`). The INPUT rule in `10-ap-isolate` matches the uplink subnet, so on a `10.0.0.0/8` uplink it rejects DNS, DHCP renewals and `:80` on the hotspot. Use `-m addrtype --dst-type LOCAL ! -d 10.42.0.1` (or the nft equivalent) instead.
+
+   **The properties above are required of the forward half.** The INPUT half (the hotspot reaches only `10.42.0.1` among the printer's own addresses) should meet them too. An nft `input` rule such as `iifname "ap0" fib daddr type local ip daddr != 10.42.0.1 reject` does, and the `10-ap-isolate` dispatcher rule is acceptable for phase 1. On `10.42.0.1`, tcp/22, udp/5353 and udp/7127 stay open to the hotspot: they are the printer's own services, and D11 is about what the hotspot reaches beyond the printer.
 
    The simplest way to get all of these is a `forward` chain with policy `drop` in `muon3d-firewall.nft`, which loads before NetworkManager. `tests/test_firewall_ruleset.py` forbids forward hooks there today to protect "the hotspot's internet access", which D11 removes, so update that test and the comments in `muon3d-firewall.nft` and `docs/connectivity/SPEC.md` AP-7. Update the `10-ap-isolate` tests that pin today's behaviour. Hotspot clients lose internet access, which today is incidental.
    - **Client to client.** Traffic between two hotspot clients is bridged by the Wi-Fi firmware and never reaches FORWARD. Set `wifi.ap-isolation=1` in `ap0-con` (bench B7 checks brcmfmac honours it).
@@ -127,7 +132,7 @@ An **uplink** is `wlan0` **or** `eth0` connected. The **deadline** is the auto-o
 | Route | Response |
 |---|---|
 | `GET /region` | `{reason, explanation, domain, declared_country, configuration, surroundings, detected_country, basis, enforcement, locked, channels}` |
-| `GET /region/options` | `{countries, preselect, basis, locked}` |
+| `GET /region/options` | `{countries, preselect, basis, locked, configurations}` |
 | `POST /region/country` `{country}` | `{country, configuration, domain, verified}` |
 
 **`GET /region` fields:**
@@ -140,6 +145,7 @@ An **uplink** is `wlan0` **or** `eth0` connected. The **deadline** is the auto-o
 
 - `countries` is a flat, sorted list of ISO codes.
 - `preselect` is the detected country if the token allows it, otherwise the token's `default_country`.
+- `configurations` (OS-2) is `{<config id>: {countries, channels}}`, one entry per configuration the token offers: the offered countries it covers, and the channels it may start a transmission on (`initiable_2g4` plus `initiable_5g`). It's `{}` without a usable token.
 
 **How `muon_setup` reads them:**
 
@@ -163,11 +169,14 @@ An **uplink** is `wlan0` **or** `eth0` connected. The **deadline** is the auto-o
    - `no-token`, `unreadable-token`, `bad-token-format`, `bad-signature`, `unknown-serial`, `serial-mismatch`, `no-signing-key`;
    - `country-not-in-token`;
    - `apply-failed`, `intersected`, `readback-mismatch`;
+   - `no-table`, `bad-table`, `no-fingerprint` (build or data faults);
    - `busy`.
 
+   Read the reason from the agent's whole output, not only its last stderr line: openssl's and iw's messages can span several lines, and a `bad-signature` read as `apply-failed` tells the owner the wrong thing.
+
    Today a 409 carries the agent's last stderr line as free text.
-2. **Timeouts and concurrency.** Cut `SET_COUNTRY_TIMEOUT_S` from 90 s to under 60 s, the Moonraker proxy's limit. Add a concurrency guard that returns `busy`.
-3. **Channels per configuration.** Add each configuration's channels to `GET /region/options`, taken from `regions.json`'s `initiable_2g4` and `initiable_5g`. The surfaces can then say whether a network is reachable after a switch.
+2. **Timeouts and concurrency.** Cut `SET_COUNTRY_TIMEOUT_S` from 90 s to under 60 s, the Moonraker proxy's limit; a timeout answers 504 with `code: "busy"`. Add a concurrency guard that answers 409 `busy`. **The guard is held until the agent exits, including after a timeout.** Killing `sudo` doesn't stop the root agent, so releasing the guard at the timeout lets a retry start a second agent on the same radio.
+3. **Channels per configuration.** Add `configurations` to `GET /region/options`, taken from `regions.json`'s `initiable_2g4` and `initiable_5g`. The surfaces can then say whether a network is reachable after a switch.
 4. **Signing keys and tokens** (KAN-321 / KAN-132). Until they exist, every unit is `no-signing-key` and setup treats it as market `none`.
 
 **Tier-2 picker data.** "Countries where this language is spoken" and the country names stay on the UI side: `SPOKEN_IN` and `Intl.DisplayNames` in MuonUI#31's `regionCountries.ts`, ported to Fluidd. `regions.json` has no language or continent data.
@@ -205,7 +214,7 @@ Errors carry `detail: {code, message}`.
 **Today (`wifi_routes.py`):**
 
 - `GET /wifi/scan?rescan=` returns `DeviceWifi {in_use, ssid, bssid, mode, chan, freq, rate, signal, security}`.
-- `GET /wifi/device/status` returns `{device, device_type, state, connection, state_reason?, user_disconnected}`. `state_reason` is nmcli's raw `"N (text)"`.
+- `GET /wifi/device/status` returns `{device, device_type, state, connection, state_reason?, user_disconnected}`. `state_reason` is nmcli's raw `"N (text)"`. **It can't explain a failed join:** NetworkManager 1.42 (bookworm) moves a failed device straight to `disconnected` with reason 0, so a read after nmcli exits almost always gives `0 (No reason given)`.
 - `GET /wifi/show?ssid=` is a query parameter, not a path segment.
 - `POST /wifi/connect` takes `{ssid, password?}`. It blocks for up to 45 s, plus 10 s for rollback. Its results:
 
@@ -225,9 +234,11 @@ Errors carry `detail: {code, message}`.
    - need-auth → `authenticating`;
    - ip-config or ip-check → `dhcp`;
    - activated → `internet_check`.
-3. Treat **`status: "restored"`** and **400** as failures, and read the reason from `state_reason`'s numeric prefix. Check these values on a device against NetworkManager's `NMDeviceStateReason`:
+3. Treat **`status: "restored"`** and **400** as failures, and take the code from Aux (W2): `detail.code` on a 400 or 500, or `code` on a `restored` answer. Don't derive it from `state_reason` (see above).
 
-   | `state_reason` | `code` |
+   **How Aux maps a failure (W2).** nmcli exit 10 is `ssid_not_found` and exit 3 is `timeout`. Otherwise Aux maps the reason nmcli prints at the moment of failure ("Error: Connection activation failed: <reason>", in English because nmcli runs under `LANG=C`), falling back to `GENERAL.REASON` only when that isn't 0. Check a wrong-password join on a device before merging.
+
+   | Reason | `code` |
    |---|---|
    | 7 (no secrets), or 8–11 (supplicant) on PSK | `wrong_password` |
    | 8–11 on 802.1X | `eap_failed` |
@@ -239,11 +250,11 @@ Errors carry `detail: {code, message}`.
 
 | ID | Change |
 |---|---|
-| W1 | Replacing a saved network's password is **#210**. Hidden networks and a security hint are new work. They need `nmcli connection add`, which Aux has no sudo grant for today. |
-| W2 | Return `detail: {code, message}` with the codes above instead of free text. |
+| W1 | Replacing a saved network's password is **#210**. Hidden networks (OS-3, MuonOS#322) use `nmcli device wifi connect … hidden yes` under the existing `--wait 45 device wifi connect *` grant: nmcli does a directed scan and reads the security from the probe response, so no `connection add` and no new grant are needed. nmcli looks for the AP straight after requesting that scan, so **retry once after about 3 s on exit 10** when `hidden` is set. The security hint validates the request and refuses `wep` and `enterprise` (`unsupported_security`) before anything changes. N5 must pass on a fresh unit. |
+| W2 | Return `detail: {code, message}` with the codes above instead of free text, and add `code` beside `warning` on a `restored` answer. The 409 for too many Wi-Fi operations keeps a string `detail`. Raise refusals inside an `except` with `from None`, so no exception chain carries the PSK argv. |
 | W3 | **Enterprise** (PEAP/TTLS). This needs a new privilege path: `nmcli connection add` or D-Bus/polkit. The sudoers header already says widening means D-Bus/polkit. It's the largest OS item, and it can ship later without blocking anything else (D10). |
 | W4 | `POST /wifi/ca_cert` stores certificates in `/etc/NetworkManager/certs`. That directory **isn't persisted**, so it needs a `[[persist]]` declaration, an ID-9 row and a data-inventory row. |
-| W5 | **The internet check.** The update check already talks to the Nexigon hub (`eu.nexigon.cloud`, via `nexigon-agent`, before any opt-in). Muon doesn't run that host, so it can't add a `generate_204` endpoint. Use the existing `check_connectivity()` (`update/ota_nexigon_client.py:392-414`) to decide `internet: true/false`. Report `internet: "portal"` when that check fails with a TLS or redirect error on an otherwise working uplink. `GET /wifi/uplink` returns `{kind, ssid, addresses, gateway, internet, checked_at}`, and adds no new destination. |
+| W5 | **The internet check.** The update check already talks to the Nexigon hub before any opt-in. Muon doesn't run that host, so it can't add a `generate_204` endpoint. Decide `internet` with a **TLS handshake on port 443 to the hub the image's agent is configured for** (read from the installed agent config; `eu.nexigon.cloud` in production). The chain and hostname are verified, the time isn't (there's no RTC before NTP), and no HTTP request is sent. `true` if it verifies; `"portal"` if a connection opens but TLS or the certificate fails; `false` if nothing connects; `null` with no uplink. **Bound the whole check, DNS included, to about 5 s**, so a broken resolver can't hold the Wi-Fi operation slots. `check_connectivity()` isn't used: it runs `nexigon-agent`, returns only error text, and fails before the clock is set. `GET /wifi/uplink` returns `{kind, ssid, addresses, gateway, internet, checked_at}` and adds no new destination. A 503 with `code: "uplink_unavailable"` means netlink couldn't be read; `muon_setup` treats it as `internet: null`. |
 | W6 | `GET /wifi/saved` is **#210**. |
 
 **Security bug, OS-11, independent of setup and urgent.**
@@ -300,7 +311,7 @@ Errors come back as `409 {"error": "<sentence>"}`. Nothing is pushed, so callers
 | `DELETE /setup/complete` | Clears the marker and returns `{ "complete": false, "completed_at": null, "by": null }`. Used only by `muon_setup`'s `reset`. |
 
 - **The marker** is `/var/lib/muon3d/setup/complete`. Its existence is the fact, so a damaged file still reads as complete; the hotspot lifecycle checks it with `[[ -e ]]`.
-- **Persisted** by `muon3d-setup.toml`. It survives OTA updates and rollback, and a factory reset removes it. KAN-413 adds the ID-9 and data-inventory rows.
+- **Persisted** by `recipes/rugix-ctrl-config/files/state/setup.toml`. It survives OTA updates and rollback, and a factory reset removes it. KAN-413 adds the ID-9 and data-inventory rows.
 - **`muon_setup` writes it** with `POST /setup/complete` at `finish` (`by: muon_setup`) and when migration marks a printer complete (`by: migrated`). It reads `GET /setup/complete` only during the migration check ([01-flow.md §7](01-flow.md#7-printers-already-in-the-field)). Once `muon_setup` has its own state, that state is authoritative.
 - **The whole prefix `/server/aux/setup` must be floored**, in **both** lists. Flooring `/server/aux/setup` rather than `/server/aux/setup/complete` also covers #174's `POST /setup` if it lands first, and anything added under it later:
   - Moonraker's `FLOOR_PREFIXES`, added by Moonraker#25;
@@ -308,7 +319,7 @@ Errors come back as `409 {"error": "<sentence>"}`. Nothing is pushed, so callers
 
   Without it, a LAN client could `DELETE` the marker through `aux_api_proxy`.
 - **#174 and MuonUI#31 overlap with this.**
-  - #174 has its own `setup_routes.py` and `setup.toml` under the same `/setup` prefix. It must drop them, or rebase onto KAN-413.
+  - #174 has its own `setup_routes.py` under the same `/setup` prefix, and a `setup.toml` at the same path as OS-7's, so the two conflict on purpose. #174 must drop both, or rebase onto KAN-413.
   - MuonUI#31's `aux.setup.get()` and `aux.setup.complete()` calls go away (UI-1).
 - **Time zone.** OS-6 keeps it separately, in `/var/lib/muon3d/time/timezone` with its own `muon3d-time.toml`.
 

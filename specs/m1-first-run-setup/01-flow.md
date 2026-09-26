@@ -180,7 +180,11 @@ Printers updated from firmware that had no setup flow MUST NOT be sent into setu
 - a marker, i.e. Aux `GET /setup/complete` returns `complete: true` (MuonOS KAN-413);
 - a saved NetworkManager Wi-Fi profile other than `ap0-con` and the development image's baked `Muon3D_Dev` profile. Reading saved profiles needs `GET /wifi/saved` (MuonOS#210); until then, use `GET /wifi/show?ssid=` on the scan results;
 - a link (muon-link `GET /link` returns `linked`);
-- a Moonraker database that already holds Fluidd UI settings.
+- a Moonraker database that already holds Fluidd UI settings;
+- Moonraker's job history holds at least one job;
+- the G-code folder holds a file the image didn't ship.
+
+The last two catch a printer on Ethernet only, driven from OrcaSlicer and never linked, which has none of the others. They also catch development units, whose baked `Muon3D_Dev` profile doesn't count. A misclassified field printer is the costly mistake: H1 keeps its hotspot up until someone finishes setup ([03 §1](03-printer-os.md#1-hotspot-lifecycle)).
 
 If so, it writes `state: complete`, with every step `done` and `source: "migrated"`, and shows no card. It also writes the marker with Aux `POST /setup/complete {"by": "migrated"}`, retried every 30 s until Aux answers ([02 §4](02-setup-api.md#4-persistence)). Without the marker, H1 would keep the unit's hotspot up for good. Getting those units a region is KAN-330's separate, non-blocking prompt, not this flow.
 

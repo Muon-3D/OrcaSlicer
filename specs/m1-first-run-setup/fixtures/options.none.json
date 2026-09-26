@@ -25,7 +25,8 @@
     "countries": [],
     "preselect": null,
     "basis": null,
-    "locked": false
+    "locked": false,
+    "configurations": {}
   },
   "ready_manifest": {
     "version": 1,

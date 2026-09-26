@@ -141,7 +141,8 @@ The optional `country` query adds that country's time zones.
 {
   "languages": [ { "code": "en", "endonym": "English" }, { "code": "de", "endonym": "Deutsch" } ],
   "region": { "countries": ["AT","BE","CH","DE","FR","GB","IE","…"],   // Aux GET /region/options, verbatim
-              "preselect": "GB", "basis": "plurality", "locked": false },
+              "preselect": "GB", "basis": "plurality", "locked": false,
+              "configurations": { "gb": { "countries": ["GB"], "channels": [1, 2, "…", 13, 36, 40, "…", 165] }, "de": { "…": "…" } } },
   "timezones": ["Europe/London"],                                       // only with ?country=
   "ready_manifest": { "version": 1, "items": [ … ] }
 }
@@ -230,13 +231,13 @@ The optional `country` query adds that country's time zones.
 1. **Validate the request.**
    - `ssid` must be 1–32 bytes UTF-8.
    - `region`, if given, must be in `options.region.countries` (`region_not_offered`).
-   - `hidden` and `security` hints need new Aux work (03 §4, W1). Until that lands, `hidden: true` returns `unsupported_security`.
+   - `hidden` and `security` hints go to Aux, which takes them from MuonOS#322 (03 §4, W1). On an image without it, `hidden: true` returns `unsupported_security`.
    - A `psk` must be 8–63 characters, or exactly 64 hex characters. `open` and `owe` take no psk.
    - For `enterprise`, `method` must be `peap` or `ttls`, `phase2` must be `mschapv2` or `pap`, and `identity` and `password` are required. Either `ca_cert_id` or `no_ca_check: true` is required.
    - Any violation gives `invalid_network`, with `detail.field` naming the field.
 2. **Start the operation.** The HTTP response comes back immediately with `ok: true` and the state showing `op`.
 3. **Switch the region first, if asked.** When `region` is set, run the region apply in §5.6a before joining. Stop there if it fails.
-4. **Join through Aux** ([03-printer-os.md §4](03-printer-os.md#4-wi-fi-join)). Set `op = {kind: "join", phase: "saving"}` and move `op.phase` through `saving` → `associating` → `authenticating` → `dhcp` → `internet_check` → `update_check`, notifying on each change. Treat Aux's `200 {"status": "restored"}` and any 400 as a failed join, and take the reason from `state_reason`'s numeric prefix. At `update_check`, refresh the clock state first, then call Aux `POST /update/check {"wait": true}` with a time limit of about 20 s (or poll `GET /update/status` until the check finishes), and read `update_available` and `target_version`. `{"wait": false}` only schedules a check, and the answer read straight after it is the previous one.
+4. **Join through Aux** ([03-printer-os.md §4](03-printer-os.md#4-wi-fi-join)). Set `op = {kind: "join", phase: "saving"}` and move `op.phase` through `saving` → `associating` → `authenticating` → `dhcp` → `internet_check` → `update_check`, notifying on each change. Treat Aux's `200 {"status": "restored"}` and any 400 as a failed join, and take the reason from Aux's `detail.code`, or `code` on a `restored` answer (03 §4 W2). Never from `state_reason`, which NetworkManager has reset to 0 by then. At `update_check`, refresh the clock state first, then call Aux `POST /update/check {"wait": true}` with a time limit of about 20 s (or poll `GET /update/status` until the check finishes), and read `update_available` and `target_version`. `{"wait": false}` only schedules a check, and the answer read straight after it is the previous one.
 5. **Success means an IPv4 address on the uplink.** Set:
    - `network = {kind, ssid, addresses: [...], hostname_local: "<hostname>.local", internet: true|false|"portal", error: null, region_confirmed}`;
    - `region_confirmed` is `true` when the market is `locked` or `none`, or when `declared_country` is already set and equals `detected_country`. Otherwise it's `false`.
@@ -265,9 +266,9 @@ This follows KAN-321 Rev 11 and MuonUI#31: the region comes from the network the
    |---|---|
    | `country-not-in-token` | `region_not_offered` |
    | `no-token`, `unreadable-token`, `bad-token-format`, `bad-signature`, `unknown-serial`, `serial-mismatch`, `no-signing-key` | `needs_reregistration` |
-   | `apply-failed`, `intersected`, `readback-mismatch` | `region_apply_failed` |
+   | HTTP 504, whatever the code | **Check the status before the code.** Re-read `GET /region`: if `declared_country` is the requested country, the apply succeeded (step 4). Otherwise `region_busy`. |
+   | `apply-failed`, `intersected`, `readback-mismatch`, `no-table`, `bad-table`, `no-fingerprint`, or any other code | `region_apply_failed` |
    | `busy` | `region_busy` |
-   | 504 | Re-read `GET /region` before deciding |
 
    On failure nothing is declared, `network.region_confirmed` stays `false`, and `network.region_error = {code, message}` records the failure. The apply drops the hotspot for about 8 s, so a phone usually misses the write's HTTP answer and learns the result from the state. The next region apply or join clears `region_error`.
 4. **Success.** Re-read `GET /region`, set `network.region_confirmed = true`, `network.region_error = null` and `network.status = done`. If the declared country has exactly one time zone and `clock.tz_source` isn't `phone` or `owner`, set that zone (`tz_source: "region"`). Then move the cursor on.
@@ -483,7 +484,7 @@ MuonOS ships the manifest at `ready_manifest` (`/usr/share/muon/setup/ready.json
 
 Add `tests/test_muon_setup.py` with fakes for `database`, `aux_api_proxy` and `klippy_apis`, covering:
 
-1. A fresh start with no marker gives `new` and cursor `language`. A fresh start gives `complete` with `source: "migrated"` when the marker exists, or when a saved Wi-Fi profile exists other than the hotspot and the dev image's baked `Muon3D_Dev` profile.
+1. A fresh start with no marker gives `new` and cursor `language`. A fresh start gives `complete` with `source: "migrated"` when the marker exists, when a saved Wi-Fi profile exists other than the hotspot and the dev image's baked `Muon3D_Dev` profile, when Moonraker's job history holds a job, or when the G-code folder holds a file the image didn't ship (01 §7).
 2. The order rules:
    - `goto` forward past the first pending step gives `invalid_step`.
    - Skipping `language` gives `not_skippable`.
