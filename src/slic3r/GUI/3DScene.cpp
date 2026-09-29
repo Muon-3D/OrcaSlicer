@@ -164,6 +164,14 @@ ColorRGBA GLVolume::SUPPORT_BLOCKER_COL  = {1.0f, 0.3f, 0.3f, 0.4f};
 
 ColorRGBA GLVolume::MODEL_HIDDEN_COL  = {0.f, 0.f, 0.f, 0.3f};
 
+// Precise Seam modifier colors
+ColorRGBA GLVolume::PRECISE_SEAM_CENTER_COL   = {1.0f,   0.627f, 0.082f, 0.6f};  // FFA015 - orange
+ColorRGBA GLVolume::PRECISE_SEAM_LEFT_COL     = {1.0f,   0.753f, 0.0f,   0.6f};  // FFC000 - golden
+ColorRGBA GLVolume::PRECISE_SEAM_RIGHT_COL    = {1.0f,   0.514f, 0.0f,   0.6f};  // FF8300 - dark orange
+ColorRGBA GLVolume::PRECISE_SEAM_ENFORCED_COL = {0.412f, 0.820f, 0.412f, 0.6f};  // 69D169 - green
+ColorRGBA GLVolume::PRECISE_SEAM_NEUTRAL_COL  = {0.655f, 0.655f, 0.655f, 0.6f};  // A7A7A7 - gray
+ColorRGBA GLVolume::PRECISE_SEAM_BLOCKED_COL  = {0.820f, 0.412f, 0.412f, 0.6f};  // D16969 - red
+
 std::array<ColorRGBA, 5> GLVolume::MODEL_COLOR = { {
     { 1.0f, 1.0f, 0.0f, 1.f },
     { 1.0f, 0.5f, 0.5f, 1.f },
@@ -365,6 +373,28 @@ ColorRGBA color_from_model_volume(const ModelVolume& model_volume)
     ColorRGBA color;
     if (model_volume.is_negative_volume())
         return GLVolume::MODEL_NEGTIVE_COL;
+    else if (model_volume.is_precise_seam()) {
+        // Return color based on Precise Seam subtype.
+        // Exhaustive switch (no default) so -Wswitch flags any future PRECISE_SEAM_* additions.
+        switch (model_volume.type()) {
+            case ModelVolumeType::PRECISE_SEAM_CENTER:   return GLVolume::PRECISE_SEAM_CENTER_COL;
+            case ModelVolumeType::PRECISE_SEAM_LEFT:     return GLVolume::PRECISE_SEAM_LEFT_COL;
+            case ModelVolumeType::PRECISE_SEAM_RIGHT:    return GLVolume::PRECISE_SEAM_RIGHT_COL;
+            case ModelVolumeType::PRECISE_SEAM_ENFORCED: return GLVolume::PRECISE_SEAM_ENFORCED_COL;
+            case ModelVolumeType::PRECISE_SEAM_NEUTRAL:  return GLVolume::PRECISE_SEAM_NEUTRAL_COL;
+            case ModelVolumeType::PRECISE_SEAM_BLOCKED:  return GLVolume::PRECISE_SEAM_BLOCKED_COL;
+            // Non-seam types are unreachable due to the outer is_precise_seam() guard;
+            // listed explicitly so this switch stays exhaustive over ModelVolumeType.
+            case ModelVolumeType::INVALID:
+            case ModelVolumeType::MODEL_PART:
+            case ModelVolumeType::NEGATIVE_VOLUME:
+            case ModelVolumeType::PARAMETER_MODIFIER:
+            case ModelVolumeType::SUPPORT_BLOCKER:
+            case ModelVolumeType::SUPPORT_ENFORCER:
+                break;
+        }
+        return GLVolume::MODEL_MIDIFIER_COL; // unreachable fallback
+    }
     else if (model_volume.is_modifier())
 #if ENABLE_MODIFIERS_ALWAYS_TRANSPARENT
         return GLVolume::MODEL_MIDIFIER_COL;
@@ -1159,6 +1189,10 @@ void GLVolumeCollection::render(GLVolumeCollection::ERenderType       type,
 
     const float support_normal_z = get_selection_support_normal_z();
 
+    // The outline passes below are driven by is_outline, which only the object shaders have; with an
+    // overlay one (wireframe, x-ray) bound they would just draw the volume again.
+    const bool shader_can_outline = shader->get_uniform_location("is_outline") >= 0;
+
     // Prime depth_tex on every frame so non-outline draws do not keep the
     // default sampler unit 0, which can conflict with other sampler types.
     shader->set_uniform("depth_tex", OUTLINE_DEPTH_TEX_UNIT);
@@ -1259,7 +1293,7 @@ void GLVolumeCollection::render(GLVolumeCollection::ERenderType       type,
         const Matrix3d view_normal_matrix = view_matrix.matrix().block(0, 0, 3, 3) * model_matrix.matrix().block(0, 0, 3, 3).inverse().transpose();
         shader->set_uniform("view_normal_matrix", view_normal_matrix);
 		//BBS: add outline related logic
-        if (volume.first->selected && GUI::wxGetApp().show_outline())
+        if (volume.first->selected && shader_can_outline && GUI::wxGetApp().show_outline())
             volume.first->render_with_outline(cnv_size);
         else
             volume.first->render();

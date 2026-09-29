@@ -63,7 +63,8 @@ public:
         SlicingNeedSupportOn,
         SlicingEmptyGcodeLayers,
         SlicingGcodeOverlap,
-        SlicingExclusionVolumeToolpath
+        SlicingExclusionVolumeToolpath,
+        SlicingPreciseSeamWarning
     };
 
     typedef size_t TimeStamp;
