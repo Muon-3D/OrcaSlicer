@@ -641,23 +641,12 @@ static ExPolygons outer_inner_brim_area(const Print& print,
     }
 
     std::vector<Polygons> extruder_unprintable_area = print.get_extruder_printable_polygons();
+    const size_t extruder_count = print.config().nozzle_diameter.size();
+    // Orca: if per-extruder print area is not specified, use the whole bed as printable area for all extruders
+    if (extruder_unprintable_area.empty())
+        extruder_unprintable_area.resize(extruder_count, Polygons{Model::getBedPolygon()});
     const size_t physical_extruder_count = std::max<size_t>(
-        print.config().nozzle_diameter.size(), extruder_unprintable_area.size());
-    // Keep brim clipping self-contained in the slicing configuration. The GUI
-    // also caches this shape in Model::printSpeedMap, but that cache is not
-    // initialized by headless slicing and must not determine generated paths.
-    Polygons fallback_printable_area {Polygon::new_scale(print.config().printable_area.values)};
-    Polygons legacy_keepouts;
-    for (const BedExcludeRegion &region : get_bed_excluded_regions(print.config(), 0))
-        if (!region.is_collision_volume())
-            legacy_keepouts.emplace_back(region.polygon);
-    if (!legacy_keepouts.empty())
-        fallback_printable_area = diff(fallback_printable_area, legacy_keepouts);
-
-    extruder_unprintable_area.resize(physical_extruder_count);
-    for (Polygons &printable_area : extruder_unprintable_area)
-        if (printable_area.empty())
-            printable_area = fallback_printable_area;
+        extruder_count, extruder_unprintable_area.size());
     if (print.has_wipe_tower() && !print.get_fake_wipe_tower().outer_wall.empty()) {
         ExPolygons expolyFromLines{};
         for (auto polyline : print.get_fake_wipe_tower().outer_wall.begin()->second) {

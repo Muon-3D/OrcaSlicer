@@ -237,6 +237,12 @@ struct BrimRun
 BrimRun generate_brim(const std::string &exclusion_definition, const Vec2d &object_position = Vec2d(40.0, 40.0))
 {
     DynamicPrintConfig config = exclusion_config(BedExcludeVolumeMode::Shared, exclusion_definition);
+    // Brim clipping normally receives the cached bed polygon initialized by
+    // the application. Give this headless fixture an explicit nozzle-reachable
+    // area so it exercises the same boundary path without mutating global state.
+    config.set_key_value("extruder_printable_area", new ConfigOptionPointsGroups{{
+        Vec2d(0.0, 0.0), Vec2d(100.0, 0.0), Vec2d(100.0, 100.0), Vec2d(0.0, 100.0),
+    }});
     config.set_deserialize_strict({
         {"skirt_loops", "0"},
         {"brim_type", "outer_only"},
