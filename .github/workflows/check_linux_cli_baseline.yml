@@ -84,9 +84,16 @@ jobs:
           path: ${{ github.workspace }}/deps/build/OrcaSlicer_dep
           key: ${{ steps.source.outputs.cache_key }}
           fail-on-cache-miss: true
-      - uses: lukka/get-cmake@latest
-        with:
-          cmakeVersion: 4.3.5
+      - name: Install verified CMake 4.3.5
+        shell: bash
+        run: |
+          archive="$RUNNER_TEMP/cmake-4.3.5-linux-x86_64.tar.gz"
+          curl --fail --location --retry 3 --retry-delay 5 \
+            https://github.com/Kitware/CMake/releases/download/v4.3.5/cmake-4.3.5-linux-x86_64.tar.gz \
+            --output "$archive"
+          echo "ecb787a0439cf4324a3554b08bf0bb4894fb8c497763a43c6895d2a1bfd6a9fa  $archive" | sha256sum --check
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/cmake-4.3.5-linux-x86_64/bin" >> "$GITHUB_PATH"
       - name: Install system build dependencies
         uses: ./.github/actions/apt-install-deps
       - name: Build exact native Linux executable
