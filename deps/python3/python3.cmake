@@ -84,6 +84,13 @@ if(WIN32)
     if(_python_tool_arch)
         list(APPEND _python_env_args "PreferredToolArchitecture=${_python_tool_arch}")
     endif()
+    if(_python_pcbuild_platform STREQUAL "ARM64" AND _python_pcbuild_config STREQUAL "Release")
+        # Native ARM64 MSBuild still exhausts the compiler heap during pythoncore
+        # LTCG on hosted runners. Limit its four default codegen threads to one,
+        # retaining optimization and any caller flags. Only this CPython build
+        # receives the environment override; other dependencies stay parallel.
+        list(APPEND _python_env_args "_LINK_=$ENV{_LINK_} /CGTHREADS:1")
+    endif()
 
     set(_conf_cmd
         cmd /c "echo /p:PlatformToolset=${_python_platform_toolset}>PCbuild\\msbuild.rsp"
