@@ -1,0 +1,31 @@
+name: Windows build tooling
+
+on:
+  pull_request:
+    branches: [muon3d-m1]
+    paths:
+      - build_release_vs.bat
+      - scripts/test_windows_build_failures.py
+      - .github/workflows/check_windows_build.yml
+      - .github/workflows/build_*.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows_build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            arch: x64
+          - os: windows-11-arm
+            arch: arm64
+    uses: ./.github/workflows/build_check_cache.yml
+    with:
+      os: ${{ matrix.os }}
+      arch: ${{ matrix.arch }}
+      build-deps-only: false
+    secrets: inherit
