@@ -19,7 +19,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  windows_failure_probes:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            binary-arch: x86_64
+          - os: windows-11-arm
+            binary-arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          lfs: 'false'
+      - name: Install native CMake
+        shell: pwsh
+        run: |
+          $ver = "4.3.5"
+          $arch = "${{ matrix.binary-arch }}"
+          Invoke-WebRequest "https://github.com/Kitware/CMake/releases/download/v$ver/cmake-$ver-windows-$arch.zip" -OutFile "$env:RUNNER_TEMP\cmake.zip"
+          Expand-Archive "$env:RUNNER_TEMP\cmake.zip" "$env:RUNNER_TEMP\cmake" -Force
+          Add-Content $env:GITHUB_PATH "$env:RUNNER_TEMP\cmake\cmake-$ver-windows-$arch\bin"
+      - name: Run actual batch failure probes
+        shell: pwsh
+        run: |
+          python -m pip install ninja==1.13.2
+          if ($LASTEXITCODE -ne 0) { throw "Ninja test dependency install failed" }
+          python scripts/test_windows_build_failures.py
+
   windows_build:
+    needs: windows_failure_probes
     strategy:
       fail-fast: false
       matrix:

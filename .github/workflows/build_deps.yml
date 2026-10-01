@@ -66,14 +66,6 @@ jobs:
           if (-not (Test-Path "$cmakeBin\cmake.exe")) { throw "cmake.exe not found at $cmakeBin" }
           Add-Content -Path $env:GITHUB_PATH -Value $cmakeBin
 
-      - name: Test Windows build failure propagation
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          python -m pip install ninja==1.13.2
-          if ($LASTEXITCODE -ne 0) { throw "Ninja test dependency install failed" }
-          python scripts/test_windows_build_failures.py
-
       - name: setup dev on Windows
         if: runner.os == 'Windows'
         uses: microsoft/setup-msbuild@v3
