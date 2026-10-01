@@ -12,6 +12,11 @@ on:
 
 permissions:
   contents: read
+  actions: write
+
+concurrency:
+  group: windows-build-tooling-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   windows_build:
@@ -29,3 +34,21 @@ jobs:
       arch: ${{ matrix.arch }}
       build-deps-only: false
     secrets: inherit
+
+  windows_tests:
+    needs: windows_build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            arch: x64
+            test-dir: build/tests
+          - os: windows-11-arm
+            arch: arm64
+            test-dir: build-arm64/tests
+    uses: ./.github/workflows/unit_tests.yml
+    with:
+      os: ${{ matrix.os }}
+      artifact: ${{ github.sha }}-tests-windows-${{ matrix.arch }}
+      test-dir: ${{ matrix.test-dir }}
