@@ -2,9 +2,9 @@ name: Linux CLI baseline comparison
 
 on:
   pull_request:
-    # PR7's branch owns the existing dependency cache. A stacked PR can restore
-    # its base branch's cache without rebuilding dependencies or moving PR7.
-    branches: [muon3d-m1, muon3d-m1-purge-lift, codex/orca-linux-baseline-ci]
+    # The immediate PR base must own the cache: GitHub does not expose a
+    # grandparent branch's cache to a PR stacked on the comparison-only branch.
+    branches: [muon3d-m1, muon3d-m1-purge-lift]
     paths:
       - .github/workflows/check_linux_cli_baseline.yml
       - scripts/run_linux_cli_comparison.py
