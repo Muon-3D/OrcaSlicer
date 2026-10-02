@@ -11,6 +11,7 @@ on:
       - scripts/test_linux_cli_comparison.py
       - scripts/check_cli_value_paths.py
       - src/libslic3r/Config.cpp
+      - src/libslic3r/PrintConfig.cpp
       - src/libslic3r/utils.cpp
       - src/OrcaSlicer.cpp
       - src/slic3r/GUI/PartPlate.cpp
