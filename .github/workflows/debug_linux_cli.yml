@@ -58,7 +58,7 @@ jobs:
           "$RUNNER_TEMP/cli-venv/bin/python" cli-tests/parity/make_seed.py \
             --out "$RUNNER_TEMP/seed" --repo "$GITHUB_WORKSPACE/source" --force --vendor BBL --vendor Custom
           unset DISPLAY WAYLAND_DISPLAY
-          for operation in rotate-x rotate-y rotate scale nozzle-diameter filament-flow-ratio machine-max-acceleration-x; do
+          for operation in rotate-x rotate-y rotate scale nozzle-diameter filament-multitool-ramming-flow machine-max-speed-e; do
             case "$operation" in
               rotate*) value=90 ;;
               scale) value=1.5 ;;
