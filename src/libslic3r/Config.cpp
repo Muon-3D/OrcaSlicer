@@ -410,7 +410,7 @@ std::ostream& ConfigDef::print_cli_help(std::ostream& out, bool show_defaults, s
             for (auto& arg : cli_args) {
                 arg.insert(0, (arg.size() == 1) ? "-" : "--");
                 //BBS: refine the print help format
-                if (!def.cli_params.empty())
+                if (!def.cli_params.empty() && def.type != coBool)
                     arg += " " + def.cli_params;
                 /*if ( def.type == coInt || def.type == coInts) {
                     arg += " int_value";
@@ -1715,6 +1715,22 @@ const ConfigOption* DynamicConfig::optptr(const t_config_option_key &opt_key) co
     return (it == options.end()) ? nullptr : it->second.get();
 }
 
+static std::string normalize_cli_bool_value(const std::string &value)
+{
+    std::vector<std::string> values;
+    boost::split(values, value, boost::is_any_of(","));
+    for (std::string &item : values) {
+        boost::trim(item);
+        if (boost::iequals(item, "true") || boost::iequals(item, "yes") ||
+            boost::iequals(item, "on") || boost::iequals(item, "enabled"))
+            item = "1";
+        else if (boost::iequals(item, "false") || boost::iequals(item, "no") ||
+                 boost::iequals(item, "off") || boost::iequals(item, "disabled"))
+            item = "0";
+    }
+    return boost::algorithm::join(values, ",");
+}
+
 bool DynamicConfig::read_cli(int argc, const char* const argv[], t_config_option_keys* extra, t_config_option_keys* keys)
 {
     // cache the CLI option => opt_key mapping
@@ -1819,7 +1835,7 @@ bool DynamicConfig::read_cli(int argc, const char* const argv[], t_config_option
                 // unescaped by the calling shell.
                 bool deserialized = false;
                 try {
-                    deserialized = opt_vector->deserialize(value, true);
+                    deserialized = opt_vector->deserialize(opt_base->type() == coBools ? normalize_cli_bool_value(value) : value, true);
                 } catch (const std::exception &) {
                     // Non-nullable vector options throw for nil instead of returning false.
                 }
@@ -1831,8 +1847,10 @@ bool DynamicConfig::read_cli(int argc, const char* const argv[], t_config_option
         } else if (opt_base->type() == coBool) {
             if (value.empty())
                 static_cast<ConfigOptionBool*>(opt_base)->value = !no;
-            else
-                opt_base->deserialize(value);
+            else if (!opt_base->deserialize(normalize_cli_bool_value(value))) {
+                boost::nowide::cerr << "Invalid value for option --" << token.c_str() << std::endl;
+                return false;
+            }
         } else if (opt_base->type() == coString) {
             // Do not unescape single string values, the unescaping is left to the calling shell.
             static_cast<ConfigOptionString*>(opt_base)->value = value;

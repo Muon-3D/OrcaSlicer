@@ -9,7 +9,10 @@ on:
       - .github/workflows/check_linux_cli_baseline.yml
       - scripts/run_linux_cli_comparison.py
       - scripts/test_linux_cli_comparison.py
+      - scripts/check_cli_value_paths.py
       - src/libslic3r/Config.cpp
+      - src/libslic3r/utils.cpp
+      - src/OrcaSlicer.cpp
       - src/slic3r/GUI/PartPlate.cpp
   workflow_dispatch:
 
@@ -59,6 +62,7 @@ jobs:
         run: |
           mkdir "$RUNNER_TEMP/cli-harness"
           cp scripts/run_linux_cli_comparison.py "$RUNNER_TEMP/cli-harness/"
+          cp scripts/check_cli_value_paths.py "$RUNNER_TEMP/cli-harness/"
           echo "HARNESS_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
       - name: Checkout exact slicer source
         uses: actions/checkout@v7
@@ -124,6 +128,13 @@ jobs:
             --tests "$RUNNER_TEMP/cli-tests" --test-sha "$TEST_SHA" \
             --binary "$GITHUB_WORKSPACE/build/package/bin/orca-slicer" \
             --output "$RUNNER_TEMP/cli-results"
+      - name: Check actual boolean values and blocked-directory failures
+        if: ${{ !cancelled() && hashFiles('build/package/bin/orca-slicer') != '' }}
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/cli-venv/bin/python" "$RUNNER_TEMP/cli-harness/check_cli_value_paths.py" \
+            --binary "$GITHUB_WORKSPACE/build/package/bin/orca-slicer" \
+            --tests "$RUNNER_TEMP/cli-tests" --output "$RUNNER_TEMP/cli-results/value-path-checks.json"
       - name: Upload identities and per-case evidence
         if: always()
         uses: actions/upload-artifact@v7
