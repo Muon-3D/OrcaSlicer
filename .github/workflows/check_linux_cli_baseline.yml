@@ -4,15 +4,18 @@ on:
   pull_request:
     # PR7's branch owns the existing dependency cache. A stacked PR can restore
     # its base branch's cache without rebuilding dependencies or moving PR7.
-    branches: [muon3d-m1, muon3d-m1-purge-lift]
+    branches: [muon3d-m1, muon3d-m1-purge-lift, codex/orca-linux-baseline-ci]
     paths:
       - .github/workflows/check_linux_cli_baseline.yml
       - scripts/run_linux_cli_comparison.py
       - scripts/test_linux_cli_comparison.py
+      - src/libslic3r/Config.cpp
+      - src/slic3r/GUI/PartPlate.cpp
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: linux-cli-baseline-${{ github.event.pull_request.number || github.ref }}
@@ -36,10 +39,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - label: base
-            source: 7c5b1764bad2afb01e9ec4084ac480c5ff357baa
-          - label: pr7
-            source: cedcd2d8bb118df0483cb077e25883de28f160bd
+          - label: candidate
+            source: ${{ github.event.pull_request.head.sha || github.sha }}
     env:
       TEST_SHA: 02242a1c1a4003e9c683ed7531d6d74e5cccc943
       TEST_TREE: 46c2287a53152ebc1a2579c037f372b97bce7c00
@@ -155,13 +156,23 @@ jobs:
           sparse-checkout: scripts
       - uses: actions/download-artifact@v8
         with:
-          pattern: linux-cli-report-*
+          pattern: linux-cli-report-candidate-*
           path: reports
+      - name: Retrieve the already executed exact baseline report
+        uses: actions/download-artifact@v8
+        with:
+          repository: Muon-3D/OrcaSlicer
+          run-id: 36870502038
+          name: linux-cli-report-base-7c5b1764bad2afb01e9ec4084ac480c5ff357baa
+          github-token: ${{ github.token }}
+          path: reports/linux-cli-report-base-7c5b1764bad2afb01e9ec4084ac480c5ff357baa
       - name: Compare the same cases without waiving existing failures
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           python3 scripts/run_linux_cli_comparison.py compare \
             --base reports/linux-cli-report-base-7c5b1764bad2afb01e9ec4084ac480c5ff357baa/report.json \
-            --candidate reports/linux-cli-report-pr7-cedcd2d8bb118df0483cb077e25883de28f160bd/report.json \
+            --candidate "reports/linux-cli-report-candidate-$CANDIDATE_SHA/report.json" \
             --output comparison.json
       - uses: actions/upload-artifact@v7
         if: always()
