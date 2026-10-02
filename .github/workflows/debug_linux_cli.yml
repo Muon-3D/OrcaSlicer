@@ -1,0 +1,90 @@
+name: Retained Linux CLI crash diagnostics
+
+on:
+  pull_request:
+    paths: [.github/workflows/debug_linux_cli.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  retained_binary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      SOURCE_SHA: 7c5b1764bad2afb01e9ec4084ac480c5ff357baa
+      TEST_SHA: 02242a1c1a4003e9c683ed7531d6d74e5cccc943
+      BINARY_SHA256: 8155646adf229dd4acb6e864ed8296bdc6ce38af1d6ec6f1b96fece22e628c4e
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 7c5b1764bad2afb01e9ec4084ac480c5ff357baa
+          path: source
+          lfs: 'false'
+      - uses: actions/checkout@v7
+        with:
+          repository: OrcaSlicer/orca-test-repo
+          ref: 02242a1c1a4003e9c683ed7531d6d74e5cccc943
+          path: cli-tests
+          lfs: 'false'
+      - name: Install the same system runtime and debugger
+        working-directory: source
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          ./build_linux.sh -ur
+          sudo apt-get install -y gdb
+          python3 -m venv "$RUNNER_TEMP/cli-venv"
+          "$RUNNER_TEMP/cli-venv/bin/python" -m pip install PyYAML==6.0.3
+      - uses: actions/download-artifact@v8
+        with:
+          repository: Muon-3D/OrcaSlicer
+          run-id: 36870502038
+          name: linux-cli-runtime-base-7c5b1764bad2afb01e9ec4084ac480c5ff357baa
+          github-token: ${{ github.token }}
+          path: retained
+      - name: Verify the exact executable and reproduce under GDB
+        shell: bash
+        run: |
+          test "$(git -C cli-tests rev-parse HEAD)" = "$TEST_SHA"
+          test "$(git -C cli-tests rev-parse 'HEAD^{tree}')" = 46c2287a53152ebc1a2579c037f372b97bce7c00
+          tar -xzf retained/cli-runtime.tar.gz -C retained
+          binary="$GITHUB_WORKSPACE/retained/package/bin/orca-slicer"
+          printf '%s  %s\n' "$BINARY_SHA256" "$binary" | sha256sum --check
+          mkdir -p diagnostics
+          readelf -n "$binary" > diagnostics/elf-notes.txt
+          ldd "$binary" > diagnostics/loaded-libraries.txt
+          "$RUNNER_TEMP/cli-venv/bin/python" cli-tests/parity/make_seed.py \
+            --out "$RUNNER_TEMP/seed" --repo "$GITHUB_WORKSPACE/source" --force --vendor BBL --vendor Custom
+          unset DISPLAY WAYLAND_DISPLAY
+          for operation in rotate-x rotate-y rotate scale nozzle-diameter filament-flow-ratio machine-max-acceleration-x; do
+            case "$operation" in
+              rotate*) value=90 ;;
+              scale) value=1.5 ;;
+              *) value=nil ;;
+            esac
+            work="$RUNNER_TEMP/case-$operation"
+            mkdir -p "$work/result"
+            cp -a "$RUNNER_TEMP/seed" "$work/datadir"
+            set +e
+            timeout 120 gdb --batch --return-child-result \
+              -ex 'set pagination off' -ex run -ex 'thread apply all bt 20' \
+              -ex 'info registers' -ex 'disassemble /r $pc-32,$pc+32' \
+              --args "$binary" --datadir "$work/datadir" --outputdir "$work/result" \
+              "--$operation=$value" --info "$GITHUB_WORKSPACE/cli-tests/test_projects/synthetic/cube20.stl" \
+              > "diagnostics/$operation.txt" 2>&1
+            result=$?
+            set -e
+            printf '%s %s\n' "$operation" "$result" >> diagnostics/exit-codes.txt
+            test "$result" -ne 124
+            # A missing library or invalid debugger invocation is not crash evidence.
+            rg 'Program received signal SIG(SEGV|ABRT)' "diagnostics/$operation.txt"
+          done
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: retained-linux-cli-diagnostics-${{ github.sha }}
+          path: diagnostics
+          retention-days: 14
+          if-no-files-found: error
