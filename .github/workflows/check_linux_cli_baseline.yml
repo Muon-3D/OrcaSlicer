@@ -1,0 +1,195 @@
+name: Linux CLI baseline comparison
+
+on:
+  pull_request:
+    # The immediate PR base must own the cache: GitHub does not expose a
+    # grandparent branch's cache to a PR stacked on the comparison-only branch.
+    branches: [muon3d-m1, muon3d-m1-purge-lift]
+    paths:
+      - .github/workflows/check_linux_cli_baseline.yml
+      - scripts/run_linux_cli_comparison.py
+      - scripts/test_linux_cli_comparison.py
+      - scripts/check_cli_value_paths.py
+      - src/libslic3r/Config.cpp
+      - src/libslic3r/PrintConfig.cpp
+      - src/libslic3r/utils.cpp
+      - src/OrcaSlicer.cpp
+      - src/slic3r/GUI/PartPlate.cpp
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: linux-cli-baseline-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  harness_tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          lfs: 'false'
+          sparse-checkout: scripts
+      - run: python3 scripts/test_linux_cli_comparison.py
+
+  regression:
+    needs: harness_tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: candidate
+            source: ${{ github.event.pull_request.head.sha || github.sha }}
+    env:
+      TEST_SHA: 02242a1c1a4003e9c683ed7531d6d74e5cccc943
+      TEST_TREE: 46c2287a53152ebc1a2579c037f372b97bce7c00
+      EXPECTED_CASE_COUNT: '93'
+      SOURCE_SHA: ${{ matrix.source }}
+      ORCA_UPDATER_SIG_KEY: ''
+      git_commit_hash: ${{ matrix.source }}
+    steps:
+      - name: Checkout comparison harness
+        uses: actions/checkout@v7
+        with:
+          lfs: 'false'
+          sparse-checkout: scripts
+      - name: Preserve harness outside source checkout
+        shell: bash
+        run: |
+          mkdir "$RUNNER_TEMP/cli-harness"
+          cp scripts/run_linux_cli_comparison.py "$RUNNER_TEMP/cli-harness/"
+          cp scripts/check_cli_value_paths.py "$RUNNER_TEMP/cli-harness/"
+          echo "HARNESS_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Checkout exact slicer source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.source }}
+          lfs: 'false'
+          sparse-checkout: ''
+      - name: Expand full source checkout
+        run: git sparse-checkout disable
+      - name: Verify source identity and select identical dependency cache
+        id: source
+        shell: bash
+        env:
+          CACHE_KEY: linux-clang-cache-orcaslicer_deps-build-${{ hashFiles('deps/**') }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git diff --exit-code HEAD
+          echo "DEPS_CACHE_KEY=$CACHE_KEY" >> "$GITHUB_ENV"
+          echo "cache_key=$CACHE_KEY" >> "$GITHUB_OUTPUT"
+          git rev-parse HEAD 'HEAD^{tree}'
+      - name: Restore existing Linux dependencies
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ github.workspace }}/deps/build/OrcaSlicer_dep
+          key: ${{ steps.source.outputs.cache_key }}
+          fail-on-cache-miss: true
+      - name: Install verified CMake 4.3.5
+        shell: bash
+        run: |
+          archive="$RUNNER_TEMP/cmake-4.3.5-linux-x86_64.tar.gz"
+          curl --fail --location --retry 3 --retry-delay 5 \
+            https://github.com/Kitware/CMake/releases/download/v4.3.5/cmake-4.3.5-linux-x86_64.tar.gz \
+            --output "$archive"
+          echo "ecb787a0439cf4324a3554b08bf0bb4894fb8c497763a43c6895d2a1bfd6a9fa  $archive" | sha256sum --check
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/cmake-4.3.5-linux-x86_64/bin" >> "$GITHUB_PATH"
+      - name: Install system build dependencies
+        uses: ./.github/actions/apt-install-deps
+      - name: Build exact native Linux executable
+        shell: bash
+        run: |
+          ./build_linux.sh -istrlL
+          ./scripts/check_appimage_libs.sh ./build/package ./build/package/bin/orca-slicer
+          echo "COMPILER_ID=$(clang++ --version | head -n 1)" >> "$GITHUB_ENV"
+          echo "CMAKE_ID=$(cmake --version | head -n 1)" >> "$GITHUB_ENV"
+          sha256sum build/package/bin/orca-slicer
+      - name: Checkout and verify one immutable regression harness
+        shell: bash
+        run: |
+          git init "$RUNNER_TEMP/cli-tests"
+          git -C "$RUNNER_TEMP/cli-tests" remote add origin https://github.com/OrcaSlicer/orca-test-repo.git
+          git -C "$RUNNER_TEMP/cli-tests" fetch --depth 1 origin "$TEST_SHA"
+          git -C "$RUNNER_TEMP/cli-tests" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/cli-tests" rev-parse HEAD)" = "$TEST_SHA"
+          test "$(git -C "$RUNNER_TEMP/cli-tests" rev-parse 'HEAD^{tree}')" = "$TEST_TREE"
+          python3 -m venv "$RUNNER_TEMP/cli-venv"
+          "$RUNNER_TEMP/cli-venv/bin/python" -m pip install pytest==9.1.1 pytest-xdist==3.8.0 PyYAML==6.0.3
+      - name: Run real CLI cases and retain failures
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/cli-venv/bin/python" "$RUNNER_TEMP/cli-harness/run_linux_cli_comparison.py" run \
+            --source "$GITHUB_WORKSPACE" --source-sha "$SOURCE_SHA" \
+            --tests "$RUNNER_TEMP/cli-tests" --test-sha "$TEST_SHA" \
+            --binary "$GITHUB_WORKSPACE/build/package/bin/orca-slicer" \
+            --output "$RUNNER_TEMP/cli-results"
+      - name: Check actual boolean values and blocked-directory failures
+        if: ${{ !cancelled() && hashFiles('build/package/bin/orca-slicer') != '' }}
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/cli-venv/bin/python" "$RUNNER_TEMP/cli-harness/check_cli_value_paths.py" \
+            --binary "$GITHUB_WORKSPACE/build/package/bin/orca-slicer" \
+            --tests "$RUNNER_TEMP/cli-tests" --output "$RUNNER_TEMP/cli-results/value-path-checks.json"
+      - name: Upload identities and per-case evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-cli-report-${{ matrix.label }}-${{ matrix.source }}
+          path: ${{ runner.temp }}/cli-results
+          retention-days: 7
+          if-no-files-found: error
+      - name: Archive exact executable and runtime
+        if: ${{ !cancelled() && hashFiles('build/package/bin/orca-slicer') != '' }}
+        shell: bash
+        run: tar -czf "$RUNNER_TEMP/cli-runtime.tar.gz" -C build package
+      - name: Upload exact executable and runtime
+        if: ${{ !cancelled() && hashFiles('build/package/bin/orca-slicer') != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-cli-runtime-${{ matrix.label }}-${{ matrix.source }}
+          path: ${{ runner.temp }}/cli-runtime.tar.gz
+          retention-days: 7
+          if-no-files-found: error
+
+  compare:
+    needs: regression
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          lfs: 'false'
+          sparse-checkout: scripts
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: linux-cli-report-candidate-*
+          path: reports
+      - name: Retrieve the already executed exact baseline report
+        uses: actions/download-artifact@v8
+        with:
+          repository: Muon-3D/OrcaSlicer
+          run-id: 36870502038
+          name: linux-cli-report-base-7c5b1764bad2afb01e9ec4084ac480c5ff357baa
+          github-token: ${{ github.token }}
+          path: reports/linux-cli-report-base-7c5b1764bad2afb01e9ec4084ac480c5ff357baa
+      - name: Compare the same cases without waiving existing failures
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/run_linux_cli_comparison.py compare \
+            --base reports/linux-cli-report-base-7c5b1764bad2afb01e9ec4084ac480c5ff357baa/report.json \
+            --candidate "reports/linux-cli-report-candidate-$CANDIDATE_SHA/report.json" \
+            --output comparison.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: linux-cli-comparison-${{ github.sha }}
+          path: comparison.json
+          retention-days: 7
+          if-no-files-found: error

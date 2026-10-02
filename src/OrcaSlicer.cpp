@@ -7322,7 +7322,16 @@ bool CLI::setup(int argc, char **argv)
         for (const t_optiondef_map::value_type &optdef : *options)
             m_config.option(optdef.first, true);
 
-    set_data_dir(m_config.opt_string("datadir"));
+    try {
+        set_data_dir(m_config.opt_string("datadir"));
+        if (!data_dir().empty() && !boost::filesystem::is_directory(data_dir())) {
+            boost::nowide::cerr << "Not a data directory: " << data_dir() << std::endl;
+            return false;
+        }
+    } catch (const boost::filesystem::filesystem_error &ex) {
+        boost::nowide::cerr << "Could not create data directory: " << ex.what() << std::endl;
+        return false;
+    }
 
     //FIXME Validating at this stage most likely does not make sense, as the config is not fully initialized yet.
     if (!validity.empty()) {
@@ -7435,6 +7444,8 @@ bool CLI::export_models(IO::ExportFormat format, std::string path_dir)
                 for (ModelObject* model_object : model.objects)
                 {
                     const std::string path = this->output_filepath(*model_object, index++, format, path_dir);
+                    if (path.empty())
+                        return false;
                     success = Slic3r::store_stl(path.c_str(), model_object, true);
                     if (success)
                         BOOST_LOG_TRIVIAL(info) << "Model successfully exported to " << path << std::endl;
@@ -7560,8 +7571,13 @@ std::string CLI::output_filepath(const ModelObject &object, unsigned int index, 
     output_path = subdir + "/"+file_name;
 
     boost::filesystem::path subdir_path(subdir);
-    if (!boost::filesystem::exists(subdir_path))
-        boost::filesystem::create_directory(subdir_path);
+    try {
+        if (!boost::filesystem::is_directory(subdir_path))
+            boost::filesystem::create_directories(subdir_path);
+    } catch (const boost::filesystem::filesystem_error &ex) {
+        boost::nowide::cerr << "Could not create output directory: " << ex.what() << std::endl;
+        return {};
+    }
     return output_path;
 }
 

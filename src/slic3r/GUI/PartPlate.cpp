@@ -2271,26 +2271,25 @@ std::vector<int> PartPlate::get_extruders_under_cli(bool conside_custom_gcode, D
             else
                 obj_support = glb_support;
 
-            if (!obj_support)
-                continue;
+            if (obj_support) {
+                int obj_support_intf_extr = 0;
+                const ConfigOption* support_intf_extr_opt = object->config.option("support_interface_filament");
+                if (support_intf_extr_opt != nullptr)
+                    obj_support_intf_extr = support_intf_extr_opt->getInt();
+                if (obj_support_intf_extr != 0)
+                    plate_extruders.push_back(obj_support_intf_extr);
+                else if (glb_support_intf_extr != 0)
+                    plate_extruders.push_back(glb_support_intf_extr);
 
-            int obj_support_intf_extr = 0;
-            const ConfigOption* support_intf_extr_opt = object->config.option("support_interface_filament");
-            if (support_intf_extr_opt != nullptr)
-                obj_support_intf_extr = support_intf_extr_opt->getInt();
-            if (obj_support_intf_extr != 0)
-                plate_extruders.push_back(obj_support_intf_extr);
-            else if (glb_support_intf_extr != 0)
-                plate_extruders.push_back(glb_support_intf_extr);
-
-            int obj_support_extr = 0;
-            const ConfigOption* support_extr_opt = object->config.option("support_filament");
-            if (support_extr_opt != nullptr)
-                obj_support_extr = support_extr_opt->getInt();
-            if (obj_support_extr != 0)
-                plate_extruders.push_back(obj_support_extr);
-            else if (glb_support_extr != 0)
-                plate_extruders.push_back(glb_support_extr);
+                int obj_support_extr = 0;
+                const ConfigOption* support_extr_opt = object->config.option("support_filament");
+                if (support_extr_opt != nullptr)
+                    obj_support_extr = support_extr_opt->getInt();
+                if (obj_support_extr != 0)
+                    plate_extruders.push_back(obj_support_extr);
+                else if (glb_support_extr != 0)
+                    plate_extruders.push_back(glb_support_extr);
+            }
 
 			int obj_outer_wall_extr = 0;
 			if (const ConfigOption* wall_opt = object->config.option("outer_wall_filament_id"); wall_opt != nullptr)
@@ -3316,7 +3315,9 @@ bool PartPlate::check_outside(int obj_id, int instance_id, BoundingBoxf3* boundi
 		// Orca: For sinking object, we use a more expensive algorithm so part below build plate won't be considered
 		if (plate_box.intersects(instance_box)) {
 			// TODO: FIXME: this does not take exclusion area into account
-            const BuildVolume build_volume(get_shape(), m_plater->build_volume().printable_height(), m_extruder_areas, m_extruder_heights);
+            // Headless CLI plates have no Plater; their configured height is kept on the plate.
+            const double printable_height = m_plater != nullptr ? m_plater->build_volume().printable_height() : m_height;
+            const BuildVolume build_volume(get_shape(), printable_height, m_extruder_areas, m_extruder_heights);
 			const auto state = instance->calc_print_volume_state(build_volume);
 			outside = state == ModelInstancePVS_Partly_Outside;
 		}
