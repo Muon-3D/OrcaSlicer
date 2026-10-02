@@ -34,7 +34,7 @@ jobs:
         run: |
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           ./build_linux.sh -ur
-          sudo apt-get install -y gdb
+          sudo apt-get install -y gdb ripgrep
           python3 -m venv "$RUNNER_TEMP/cli-venv"
           "$RUNNER_TEMP/cli-venv/bin/python" -m pip install PyYAML==6.0.3
       - uses: actions/download-artifact@v8
