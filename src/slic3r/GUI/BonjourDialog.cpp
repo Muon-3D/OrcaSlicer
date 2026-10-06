@@ -2,6 +2,8 @@
 
 #include "BonjourDialog.hpp"
 
+#include <algorithm>
+#include <iterator>
 #include <set>
 #include <mutex>
 
@@ -21,6 +23,7 @@
 #include "slic3r/GUI/format.hpp"
 #include "slic3r/Utils/Bonjour.hpp"
 #include "slic3r/Utils/Http.hpp"
+#include "slic3r/Utils/MuonBleScan.hpp"
 #include "slic3r/Utils/MuonDiscovery.hpp"
 
 #include "slic3r/GUI/Widgets/DialogButtons.hpp"
@@ -54,6 +57,31 @@ wxDEFINE_EVENT(EVT_BONJOUR_COMPLETE, wxCommandEvent);
 // The hotspot probe's answer: GetInt() is the lookup id, GetString() the body.
 wxDECLARE_EVENT(EVT_MUON_HOTSPOT, wxCommandEvent);
 wxDEFINE_EVENT(EVT_MUON_HOTSPOT, wxCommandEvent);
+
+// A printer heard over Bluetooth.
+class MuonBleEvent : public wxEvent
+{
+public:
+	MuonBle::Printer printer;
+	unsigned lookup_id;
+
+	MuonBleEvent(wxEventType eventType, int winid, MuonBle::Printer printer, unsigned lookup_id) :
+		wxEvent(winid, eventType),
+		printer(std::move(printer)),
+		lookup_id(lookup_id)
+	{}
+
+	virtual wxEvent *Clone() const
+	{
+		return new MuonBleEvent(*this);
+	}
+};
+
+wxDEFINE_EVENT(EVT_MUON_BLE, MuonBleEvent);
+
+// How the Bluetooth scan started: GetInt() is the lookup id, GetExtraLong() a MuonBle::Radio.
+wxDECLARE_EVENT(EVT_MUON_BLE_RADIO, wxCommandEvent);
+wxDEFINE_EVENT(EVT_MUON_BLE_RADIO, wxCommandEvent);
 
 class ReplySet: public std::set<BonjourReply> {};
 
@@ -125,7 +153,7 @@ BonjourDialog::BonjourDialog(wxWindow *parent, Slic3r::PrinterTechnology tech, b
 
 		const wxString bullet = wxString::FromUTF8("\xE2\x80\xA2 "); // U+2022 BULLET
 		auto *help_text = new wxStaticText(this, wxID_ANY,
-			_L("Printers are looked for on this network and on a new printer's own Wi-Fi hotspot (Muon-…).") + "\n\n" +
+			_L("Printers are looked for on this network, on a new printer's own Wi-Fi hotspot (Muon-…), and nearby over Bluetooth.") + "\n\n" +
 			_L("Look at the printer's screen:") + "\n" +
 			bullet + _L("A list of languages or a QR code — it's new. Scan the code with your phone to set it up, or join the Wi-Fi network it names (Muon-…) on this computer, then search again.") + "\n" +
 			bullet + _L("Its home screen — make sure this computer is on the same network, or type its address (Settings › Network on the printer).") + "\n" +
@@ -137,6 +165,10 @@ BonjourDialog::BonjourDialog(wxWindow *parent, Slic3r::PrinterTechnology tech, b
 		help_sizer->Add(help_text, 0);
 		vsizer->Add(help_sizer, 0, wxEXPAND | wxTOP | wxLEFT | wxRIGHT, em);
 		vsizer->Hide(help_sizer);
+
+		bluetooth_note = new wxStaticText(this, wxID_ANY, "");
+		vsizer->Add(bluetooth_note, 0, wxEXPAND | wxTOP | wxLEFT | wxRIGHT, em);
+		vsizer->Hide(bluetooth_note);
 	}
 
 	list->SetSingleStyle(wxLC_SINGLE_SEL);
@@ -168,6 +200,8 @@ BonjourDialog::BonjourDialog(wxWindow *parent, Slic3r::PrinterTechnology tech, b
 	Bind(EVT_BONJOUR_REPLY, &BonjourDialog::on_reply, this);
 	Bind(EVT_BONJOUR_COMPLETE, &BonjourDialog::on_complete, this);
 	Bind(EVT_MUON_HOTSPOT, &BonjourDialog::on_hotspot, this);
+	Bind(EVT_MUON_BLE, &BonjourDialog::on_bluetooth, this);
+	Bind(EVT_MUON_BLE_RADIO, &BonjourDialog::on_bluetooth_radio, this);
 	Bind(wxEVT_BUTTON, &BonjourDialog::on_ok, this, wxID_OK);
 
 	Bind(wxEVT_TIMER, &BonjourDialog::on_timer, this);
@@ -177,6 +211,7 @@ BonjourDialog::BonjourDialog(wxWindow *parent, Slic3r::PrinterTechnology tech, b
 BonjourDialog::~BonjourDialog()
 {
 	// Needed bacuse of forward defs
+	stop_bluetooth();
 }
 
 bool BonjourDialog::show_and_lookup()
@@ -191,6 +226,7 @@ bool BonjourDialog::show_and_lookup()
 		std::lock_guard<std::mutex> lock_guard(guard->mutex);
 		guard->dialog = nullptr;
 	}
+	stop_bluetooth();
 	return res;
 }
 
@@ -213,12 +249,14 @@ void BonjourDialog::lookup()
 	}
 	const unsigned id = ++lookup_id;
 
+	stop_bluetooth();
 	replies->clear();
 	found.clear();
 	rows.clear();
 	list->DeleteAllItems();
 	if (muon_hints) {
 		show_help(false);
+		GetSizer()->Hide(bluetooth_note);
 	}
 
 	timer->Stop();
@@ -270,6 +308,37 @@ void BonjourDialog::lookup()
 
 	if (muon_hints) {
 		probe_hotspot(id);
+
+		// Listen for printers nearby over Bluetooth for as long as the Bonjour lookup runs.
+		bluetooth = MuonBle::create_scanner();
+		if (bluetooth) {
+			bluetooth->start(
+				[dguard, id](const MuonBle::Printer &printer) {
+					std::lock_guard<std::mutex> lock_guard(dguard->mutex);
+					auto dialog = dguard->dialog;
+					if (dialog != nullptr) {
+						wxQueueEvent(dialog, new MuonBleEvent(EVT_MUON_BLE, dialog->GetId(), printer, id));
+					}
+				},
+				[dguard, id](MuonBle::Radio radio) {
+					std::lock_guard<std::mutex> lock_guard(dguard->mutex);
+					auto dialog = dguard->dialog;
+					if (dialog != nullptr) {
+						auto evt = new wxCommandEvent(EVT_MUON_BLE_RADIO, dialog->GetId());
+						evt->SetInt(int(id));
+						evt->SetExtraLong(long(radio));
+						wxQueueEvent(dialog, evt);
+					}
+				});
+		}
+	}
+}
+
+void BonjourDialog::stop_bluetooth()
+{
+	if (bluetooth) {
+		bluetooth->stop();
+		bluetooth.reset();
 	}
 }
 
@@ -358,12 +427,64 @@ void BonjourDialog::on_hotspot(wxCommandEvent &e)
 	}
 
 	MuonFound printer;
-	printer.short_name = identity->short_name;
-	printer.display    = GUI::from_u8(identity->display);
-	printer.address    = MuonDiscovery::HOTSPOT_ADDRESS;
-	printer.setup      = identity->setup;
+	printer.via             = MuonFound::Via::Hotspot;
+	printer.short_name      = identity->short_name;
+	printer.endpoint_prefix = identity->endpoint_id.substr(0, 16);
+	printer.display         = GUI::from_u8(identity->display);
+	printer.address         = MuonDiscovery::HOTSPOT_ADDRESS;
+	printer.setup           = identity->setup;
 	found.push_back(std::move(printer));
 	refresh_list();
+}
+
+void BonjourDialog::on_bluetooth(MuonBleEvent &e)
+{
+	if (e.lookup_id != lookup_id) {
+		// From a lookup that "Search again" replaced
+		return;
+	}
+
+	const MuonBle::Printer &heard = e.printer;
+	auto it = std::find_if(found.begin(), found.end(), [&heard](const MuonFound &f) {
+		return f.via == MuonFound::Via::Bluetooth && f.bluetooth_id == heard.id;
+	});
+	if (it == found.end()) {
+		found.emplace_back();
+		it = std::prev(found.end());
+	}
+	it->via             = MuonFound::Via::Bluetooth;
+	it->bluetooth_id    = heard.id;
+	it->short_name      = heard.short_name;
+	it->endpoint_prefix = heard.endpoint_prefix;
+	it->display         = heard.display.empty() ? _L("Muon printer") : GUI::from_u8(heard.display);
+	it->state_known     = heard.state_known;
+	// The advertisement only says whether setup is finished.
+	it->setup           = !heard.state_known ? std::string() : heard.unclaimed ? "new" : "complete";
+	refresh_list();
+}
+
+void BonjourDialog::on_bluetooth_radio(wxCommandEvent &e)
+{
+	if (unsigned(e.GetInt()) != lookup_id) {
+		// From a lookup that "Search again" replaced
+		return;
+	}
+
+	wxString note;
+	switch (MuonBle::Radio(e.GetExtraLong())) {
+	case MuonBle::Radio::Off: note = _L("Bluetooth is off, so printers nearby were not looked for."); break;
+	case MuonBle::Radio::Denied: note = _L("Bluetooth isn't allowed for this app, so printers nearby were not looked for."); break;
+	default:
+		// On, or no Bluetooth on this computer: nothing to say.
+		return;
+	}
+	bluetooth_note->SetLabel(note);
+	bluetooth_note->Wrap(50 * GUI::wxGetApp().em_unit());
+	GetSizer()->Show(bluetooth_note);
+	wxSize size = GetSize();
+	size.IncTo(GetSizer()->ComputeFittingWindowSize(this));
+	SetSize(size);
+	Layout();
 }
 
 // Rebuilds the list from the Bonjour replies and the printers found other ways.
@@ -436,11 +557,19 @@ void BonjourDialog::refresh_list()
 		}
 	}
 
+	// Printers already listed with an address, so Bluetooth does not list them again.
+	std::set<std::string> endpoint_prefixes;
+
 	for (const MuonFound &printer : found) {
+		if (printer.via != MuonFound::Via::Hotspot) {
+			continue;
+		}
 		if (lan_has_hotspot_address || (!printer.short_name.empty() && lan_names.count(printer.short_name) != 0)) {
 			// Bonjour already lists it
 			continue;
 		}
+		lan_names.insert(printer.short_name);
+		endpoint_prefixes.insert(printer.endpoint_prefix);
 
 		auto item = list->InsertItem(0, printer.address);
 		list->SetItemData(item, long(rows.size()));
@@ -448,6 +577,26 @@ void BonjourDialog::refresh_list()
 		list->SetItem(item, 2, GUI::format_wxstr(_L("%1% (on its hotspot)"), printer.display));
 		// An unset printer is the one that runs a hotspot, so say so when it could not tell.
 		list->SetItem(item, status_column, MuonDiscovery::setup_complete(printer.setup) ? _L("Ready") : _L("Needs setup"));
+	}
+
+	for (const MuonFound &printer : found) {
+		if (printer.via != MuonFound::Via::Bluetooth) {
+			continue;
+		}
+		if ((!printer.short_name.empty() && lan_names.count(printer.short_name) != 0) ||
+			(!printer.endpoint_prefix.empty() && endpoint_prefixes.count(printer.endpoint_prefix) != 0)) {
+			// Also found with an address, which is the row that can be used
+			continue;
+		}
+
+		// No address: the slicer cannot print to a printer it only hears over Bluetooth.
+		auto item = list->InsertItem(0, wxEmptyString);
+		list->SetItemData(item, long(rows.size()));
+		rows.push_back({ nullptr, &printer });
+		list->SetItem(item, 2, GUI::format_wxstr(_L("%1% (nearby over Bluetooth)"), printer.display));
+		if (MuonDiscovery::setup_pending(printer.setup)) {
+			list->SetItem(item, status_column, _L("Needs setup"));
+		}
 	}
 
 	const int em = GUI::wxGetApp().em_unit();
@@ -478,6 +627,7 @@ void BonjourDialog::on_complete(wxCommandEvent &e)
 
 	timer_state = 0;
 	if (muon_hints) {
+		stop_bluetooth();
 		show_help(list->GetItemCount() == 0);
 	}
 }
@@ -499,6 +649,24 @@ void BonjourDialog::on_ok(wxCommandEvent &e)
 		}
 		name      = muon_display_name(*row->reply);
 		setup_url = muon_setup_url(*row->reply);
+	} else if (row->found->via == MuonFound::Via::Bluetooth) {
+		// Nothing to fill in: say how to get it onto the network, and stay in the list.
+		if (MuonDiscovery::setup_complete(row->found->setup)) {
+			GUI::MessageDialog dialog(this,
+				GUI::format_wxstr(_L("%1% is nearby, but not on this network. Connect this computer to the printer's network, or type its address (Settings › Network on the printer)."), row->found->display),
+				wxEmptyString, wxOK | wxICON_INFORMATION);
+			dialog.ShowModal();
+			return;
+		}
+		GUI::MessageDialog dialog(this,
+			GUI::format_wxstr(_L("%1% is nearby over Bluetooth, which the slicer can't print over. Set it up with the Muon3D app or at app.muon3d.com, then it appears on your network."), row->found->display),
+			wxEmptyString, wxYES | wxNO | wxICON_INFORMATION);
+		dialog.SetButtonLabel(wxID_YES, _L("Open app.muon3d.com"));
+		dialog.SetButtonLabel(wxID_NO, _L("Back"));
+		if (dialog.ShowModal() == wxID_YES) {
+			wxLaunchDefaultBrowser("https://app.muon3d.com");
+		}
+		return;
 	} else {
 		if (MuonDiscovery::setup_complete(row->found->setup)) {
 			e.Skip();
