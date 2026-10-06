@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <boost/asio/ip/address.hpp>
@@ -44,10 +45,27 @@ public:
 	bool show_and_lookup();
 	wxString get_selected() const;
 private:
+	// A Muon printer found other than by Bonjour: on its own hotspot.
+	struct MuonFound
+	{
+		std::string short_name;  // "walnut-8987", to match the same printer found by Bonjour
+		wxString    display;     // "Walnut · 8987"
+		wxString    address;     // what get_selected() returns
+		std::string setup;       // muon_setup's state, or empty when it was not readable
+	};
+
+	// What a list row shows: a Bonjour reply, or a printer found another way.
+	struct Row
+	{
+		const BonjourReply *reply { nullptr };
+		const MuonFound    *found { nullptr };
+	};
+
 	wxListView *list;
 	std::unique_ptr<ReplySet> replies;
-	// The reply shown in each list row, indexed by the row's item data.
-	std::vector<const BonjourReply *> rows;
+	std::vector<MuonFound> found;
+	// What each list row shows, indexed by the row's item data.
+	std::vector<Row> rows;
 	wxStaticText *label;
 	wxBoxSizer *help_sizer { nullptr };
 	std::shared_ptr<Bonjour> bonjour;
@@ -61,10 +79,13 @@ private:
 	int status_column { -1 };
 
 	void lookup();
-	const BonjourReply *selected_reply() const;
+	void probe_hotspot(unsigned id);
+	void refresh_list();
+	const Row *selected_row() const;
 	void show_help(bool show);
 
 	virtual void on_reply(BonjourReplyEvent &);
+	void on_hotspot(wxCommandEvent &);
 	void on_complete(wxCommandEvent &);
 	void on_ok(wxCommandEvent &);
 	void on_timer(wxTimerEvent &);

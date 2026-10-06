@@ -695,6 +695,8 @@ set(SLIC3R_GUI_SOURCES
     Utils/minilzo_extension.hpp
     Utils/MKS.cpp
     Utils/MKS.hpp
+    Utils/MuonDiscovery.cpp
+    Utils/MuonDiscovery.hpp
     Utils/NetworkAgent.cpp
     Utils/NetworkAgent.hpp
     Utils/NetworkAgentFactory.hpp

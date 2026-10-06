@@ -20,6 +20,8 @@
 #include "slic3r/GUI/MsgDialog.hpp"
 #include "slic3r/GUI/format.hpp"
 #include "slic3r/Utils/Bonjour.hpp"
+#include "slic3r/Utils/Http.hpp"
+#include "slic3r/Utils/MuonDiscovery.hpp"
 
 #include "slic3r/GUI/Widgets/DialogButtons.hpp"
 
@@ -49,6 +51,10 @@ wxDEFINE_EVENT(EVT_BONJOUR_REPLY, BonjourReplyEvent);
 wxDECLARE_EVENT(EVT_BONJOUR_COMPLETE, wxCommandEvent);
 wxDEFINE_EVENT(EVT_BONJOUR_COMPLETE, wxCommandEvent);
 
+// The hotspot probe's answer: GetInt() is the lookup id, GetString() the body.
+wxDECLARE_EVENT(EVT_MUON_HOTSPOT, wxCommandEvent);
+wxDEFINE_EVENT(EVT_MUON_HOTSPOT, wxCommandEvent);
+
 class ReplySet: public std::set<BonjourReply> {};
 
 struct LifetimeGuard
@@ -61,16 +67,10 @@ struct LifetimeGuard
 
 // Muon printers publish muon_setup's state in the "setup" TXT key: "new", "in_progress" or "complete".
 // Anything else, or no key at all (a Muon printer from before the key existed), gets no status.
-static bool muon_needs_setup(const BonjourReply &reply)
+static std::string muon_setup_state(const BonjourReply &reply)
 {
 	const auto it = reply.txt_data.find("setup");
-	return it != reply.txt_data.end() && (it->second == "new" || it->second == "in_progress");
-}
-
-static bool muon_setup_complete(const BonjourReply &reply)
-{
-	const auto it = reply.txt_data.find("setup");
-	return it != reply.txt_data.end() && it->second == "complete";
+	return it != reply.txt_data.end() ? it->second : std::string();
 }
 
 // The name the owner knows the printer by: the "name" TXT key, else its host name.
@@ -119,14 +119,15 @@ BonjourDialog::BonjourDialog(wxWindow *parent, Slic3r::PrinterTechnology tech, b
 
 	if (muon_hints) {
 		// Shown in place of the label when a lookup finds nothing.
-		auto *help_title = new wxStaticText(this, wxID_ANY, _L("No printers found on this network."));
+		auto *help_title = new wxStaticText(this, wxID_ANY, _L("No printers found."));
 		help_title->SetFont(help_title->GetFont().Bold());
 		help_title->Wrap(50 * em);
 
 		const wxString bullet = wxString::FromUTF8("\xE2\x80\xA2 "); // U+2022 BULLET
 		auto *help_text = new wxStaticText(this, wxID_ANY,
+			_L("Printers are looked for on this network and on a new printer's own Wi-Fi hotspot (Muon-…).") + "\n\n" +
 			_L("Look at the printer's screen:") + "\n" +
-			bullet + _L("A list of languages or a QR code — it's new. Scan the code with your phone to set it up, then search again.") + "\n" +
+			bullet + _L("A list of languages or a QR code — it's new. Scan the code with your phone to set it up, or join the Wi-Fi network it names (Muon-…) on this computer, then search again.") + "\n" +
 			bullet + _L("Its home screen — make sure this computer is on the same network, or type its address (Settings › Network on the printer).") + "\n" +
 			bullet + _L("Nothing — check that it's switched on."));
 		help_text->Wrap(50 * em);
@@ -166,6 +167,7 @@ BonjourDialog::BonjourDialog(wxWindow *parent, Slic3r::PrinterTechnology tech, b
 
 	Bind(EVT_BONJOUR_REPLY, &BonjourDialog::on_reply, this);
 	Bind(EVT_BONJOUR_COMPLETE, &BonjourDialog::on_complete, this);
+	Bind(EVT_MUON_HOTSPOT, &BonjourDialog::on_hotspot, this);
 	Bind(wxEVT_BUTTON, &BonjourDialog::on_ok, this, wxID_OK);
 
 	Bind(wxEVT_TIMER, &BonjourDialog::on_timer, this);
@@ -212,6 +214,7 @@ void BonjourDialog::lookup()
 	const unsigned id = ++lookup_id;
 
 	replies->clear();
+	found.clear();
 	rows.clear();
 	list->DeleteAllItems();
 	if (muon_hints) {
@@ -235,11 +238,11 @@ void BonjourDialog::lookup()
 	// - "version" for OctoPrint version column
 	// - "model" for FFF/SLA filtering
 	// - "addr_pref" optional hint (e.g. "hostname" or "ip") from the service
-	// - "name" and "setup", published by Muon printers, for the name and status columns
-	Bonjour::TxtKeys txt_keys { "version", "model", "addr_pref" };
+	// - "setup", published by Muon printers, for the status column and to recognise them
+	// - "name", published by Muon printers, for the name column
+	Bonjour::TxtKeys txt_keys { "version", "model", "addr_pref", "setup" };
 	if (muon_hints) {
 		txt_keys.insert("name");
-		txt_keys.insert("setup");
 	}
 
     bonjour = Bonjour("octoprint")
@@ -264,16 +267,44 @@ void BonjourDialog::lookup()
 			}
 		})
 		.lookup();
+
+	if (muon_hints) {
+		probe_hotspot(id);
+	}
 }
 
-const BonjourReply *BonjourDialog::selected_reply() const
+// An unset M1 runs a Wi-Fi hotspot (Muon-<name>) and sits at 10.42.0.1 on it. Ask it
+// who it is; a computer that is not on such a hotspot gets no answer, and no row.
+void BonjourDialog::probe_hotspot(unsigned id)
+{
+	auto dguard = guard;
+	Http::get(std::string("http://") + MuonDiscovery::HOTSPOT_ADDRESS + MuonDiscovery::IDENTITY_PATH)
+		.timeout_connect(1)
+		.timeout_max(2)
+		.on_complete([dguard, id](std::string body, unsigned) {
+			std::lock_guard<std::mutex> lock_guard(dguard->mutex);
+			auto dialog = dguard->dialog;
+			if (dialog != nullptr) {
+				auto evt = new wxCommandEvent(EVT_MUON_HOTSPOT, dialog->GetId());
+				evt->SetInt(int(id));
+				evt->SetString(wxString::FromUTF8(body));
+				wxQueueEvent(dialog, evt);
+			}
+		})
+		.on_error([](std::string, std::string, unsigned) {
+			// Not on a printer's hotspot, or not an M1 there: nothing to show.
+		})
+		.perform();
+}
+
+const BonjourDialog::Row *BonjourDialog::selected_row() const
 {
 	const long sel = list->GetFirstSelected();
 	if (sel < 0) {
 		return nullptr;
 	}
 	const size_t row = size_t(list->GetItemData(sel));
-	return row < rows.size() ? rows[row] : nullptr;
+	return row < rows.size() ? &rows[row] : nullptr;
 }
 
 void BonjourDialog::show_help(bool show)
@@ -310,7 +341,34 @@ void BonjourDialog::on_reply(BonjourReplyEvent &e)
 	}
 
 	replies->insert(std::move(e.reply));
+	refresh_list();
+}
 
+void BonjourDialog::on_hotspot(wxCommandEvent &e)
+{
+	if (unsigned(e.GetInt()) != lookup_id) {
+		// From a lookup that "Search again" replaced
+		return;
+	}
+
+	const auto identity = MuonDiscovery::parse_identity(GUI::into_u8(e.GetString()));
+	if (!identity) {
+		// Something answered at 10.42.0.1, but not an M1.
+		return;
+	}
+
+	MuonFound printer;
+	printer.short_name = identity->short_name;
+	printer.display    = GUI::from_u8(identity->display);
+	printer.address    = MuonDiscovery::HOTSPOT_ADDRESS;
+	printer.setup      = identity->setup;
+	found.push_back(std::move(printer));
+	refresh_list();
+}
+
+// Rebuilds the list from the Bonjour replies and the printers found other ways.
+void BonjourDialog::refresh_list()
+{
 	auto selected = get_selected();
 
 	wxWindowUpdateLocker freeze_guard(this);
@@ -318,6 +376,10 @@ void BonjourDialog::on_reply(BonjourReplyEvent &e)
 
 	list->DeleteAllItems();
 	rows.clear();
+
+	// Muon printers Bonjour found, so the same printer found another way is not listed twice.
+	std::set<std::string> lan_names;
+	bool lan_has_hotspot_address = false;
 
 	// The whole list is recreated so that we benefit from it already being sorted in the set.
 	// (And also because wxListView's sorting API is bananas.)
@@ -331,15 +393,27 @@ void BonjourDialog::on_reply(BonjourReplyEvent &e)
 			}
 		}
 
+		wxString ip_address = reply.full_address;
+		wxString hostname   = reply.hostname;
+		if (MuonDiscovery::is_muon_service(reply.txt_data)) {
+			// The service record names Moonraker's loopback-only port; the printer answers on port 80.
+			ip_address = GUI::from_u8(MuonDiscovery::muon_address(reply.ip.to_string(), reply.ip.is_v6(), reply.path()));
+			if (hostname.empty()) {
+				prefer_hostname = false;
+			}
+			lan_names.insert(MuonDiscovery::short_name(reply.hostname));
+			lan_has_hotspot_address |= reply.ip.to_string() == MuonDiscovery::HOTSPOT_ADDRESS;
+		}
+
 		// Column 0 ("Address") is what get_selected() will return.
 		// If addr_pref=hostname, put hostname there and IP in column 1.
 		// Otherwise keep current behavior: IP in col0, hostname in col1.
-		wxString primary   = prefer_hostname ? reply.hostname    : reply.full_address;
-		wxString secondary = prefer_hostname ? reply.full_address : reply.hostname;
+		wxString primary   = prefer_hostname ? hostname   : ip_address;
+		wxString secondary = prefer_hostname ? ip_address : hostname;
 
 		auto item = list->InsertItem(0, primary);
 		list->SetItemData(item, long(rows.size()));
-		rows.push_back(&reply);
+		rows.push_back({ &reply, nullptr });
 		list->SetItem(item, 1, secondary);
 
 		const auto it_name = muon_hints ? reply.txt_data.find("name") : reply.txt_data.end();
@@ -353,14 +427,28 @@ void BonjourDialog::on_reply(BonjourReplyEvent &e)
 		}
 
 		if (muon_hints) {
-			if (muon_needs_setup(reply)) {
+			const std::string setup = muon_setup_state(reply);
+			if (MuonDiscovery::setup_pending(setup)) {
 				list->SetItem(item, status_column, _L("Needs setup"));
-			} else if (muon_setup_complete(reply)) {
+			} else if (MuonDiscovery::setup_complete(setup)) {
 				list->SetItem(item, status_column, _L("Ready"));
 			}
 		}
 	}
 
+	for (const MuonFound &printer : found) {
+		if (lan_has_hotspot_address || (!printer.short_name.empty() && lan_names.count(printer.short_name) != 0)) {
+			// Bonjour already lists it
+			continue;
+		}
+
+		auto item = list->InsertItem(0, printer.address);
+		list->SetItemData(item, long(rows.size()));
+		rows.push_back({ nullptr, &printer });
+		list->SetItem(item, 2, GUI::format_wxstr(_L("%1% (on its hotspot)"), printer.display));
+		// An unset printer is the one that runs a hotspot, so say so when it could not tell.
+		list->SetItem(item, status_column, MuonDiscovery::setup_complete(printer.setup) ? _L("Ready") : _L("Needs setup"));
+	}
 
 	const int em = GUI::wxGetApp().em_unit();
 
@@ -373,6 +461,11 @@ void BonjourDialog::on_reply(BonjourReplyEvent &e)
 		// Attempt to preserve selection
 		auto hit = list->FindItem(-1, selected);
 		if (hit >= 0) { list->SetItemState(hit, wxLIST_STATE_SELECTED, wxLIST_STATE_SELECTED); }
+	}
+
+	if (muon_hints && timer_state == 0) {
+		// A printer found after the lookup finished replaces the help
+		show_help(list->GetItemCount() == 0);
 	}
 }
 
@@ -391,23 +484,44 @@ void BonjourDialog::on_complete(wxCommandEvent &e)
 
 void BonjourDialog::on_ok(wxCommandEvent &e)
 {
-	const BonjourReply *reply = muon_hints ? selected_reply() : nullptr;
-	if (reply != nullptr && muon_needs_setup(*reply)) {
-		// Don't block: the owner can still use a printer that isn't set up.
-		GUI::MessageDialog dialog(this,
-			GUI::format_wxstr(_L("%1% isn't set up yet. Finish setup on its screen, or open its setup page in your browser."), muon_display_name(*reply)),
-			wxEmptyString, wxYES | wxNO | wxICON_QUESTION);
-		dialog.SetButtonLabel(wxID_YES, _L("Open setup page"));
-		dialog.SetButtonLabel(wxID_NO, _L("Use it anyway"));
-		const int res = dialog.ShowModal();
-		if (res == wxID_YES) {
-			// Stay in the list, so the owner can search again once setup is done.
-			wxLaunchDefaultBrowser(muon_setup_url(*reply));
+	const Row *row = muon_hints ? selected_row() : nullptr;
+	if (row == nullptr) {
+		e.Skip();
+		return;
+	}
+
+	wxString name;
+	wxString setup_url;
+	if (row->reply != nullptr) {
+		if (!MuonDiscovery::setup_pending(muon_setup_state(*row->reply))) {
+			e.Skip();
 			return;
 		}
-		if (res != wxID_NO) {
+		name      = muon_display_name(*row->reply);
+		setup_url = muon_setup_url(*row->reply);
+	} else {
+		if (MuonDiscovery::setup_complete(row->found->setup)) {
+			e.Skip();
 			return;
 		}
+		name      = row->found->display;
+		setup_url = "http://" + row->found->address + "/#/setup";
+	}
+
+	// Don't block: the owner can still use a printer that isn't set up.
+	GUI::MessageDialog dialog(this,
+		GUI::format_wxstr(_L("%1% isn't set up yet. Finish setup on its screen, or open its setup page in your browser."), name),
+		wxEmptyString, wxYES | wxNO | wxICON_QUESTION);
+	dialog.SetButtonLabel(wxID_YES, _L("Open setup page"));
+	dialog.SetButtonLabel(wxID_NO, _L("Use it anyway"));
+	const int res = dialog.ShowModal();
+	if (res == wxID_YES) {
+		// Stay in the list, so the owner can search again once setup is done.
+		wxLaunchDefaultBrowser(setup_url);
+		return;
+	}
+	if (res != wxID_NO) {
+		return;
 	}
 	e.Skip();
 }

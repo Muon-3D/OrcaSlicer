@@ -16901,7 +16901,12 @@ msgstr ""
 msgid "Network lookup"
 msgstr ""
 
-msgid "No printers found on this network."
+msgid "No printers found."
+msgstr ""
+
+msgid ""
+"Printers are looked for on this network and on a new printer's own Wi-Fi "
+"hotspot (Muon-…)."
 msgstr ""
 
 msgid "Look at the printer's screen:"
@@ -16909,7 +16914,8 @@ msgstr ""
 
 msgid ""
 "A list of languages or a QR code — it's new. Scan the code with your phone "
-"to set it up, then search again."
+"to set it up, or join the Wi-Fi network it names (Muon-…) on this computer, "
+"then search again."
 msgstr ""
 
 msgid ""
@@ -16936,6 +16942,10 @@ msgid "Search again"
 msgstr ""
 
 msgid "Needs setup"
+msgstr ""
+
+#, possible-c-format, possible-boost-format
+msgid "%1% (on its hotspot)"
 msgstr ""
 
 msgid "Ready"
