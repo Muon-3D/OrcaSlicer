@@ -170,6 +170,7 @@ jobs:
         with:
           name: OrcaSlicer_Mac_universal_${{ env.ver }}
           path: ${{ github.workspace }}/OrcaSlicer_Mac_universal_${{ env.ver }}.dmg
+          retention-days: 3
 
       - name: Upload OrcaSlicer_profile_validator DMG mac
         if: inputs.os == 'macos-14'
@@ -178,6 +179,7 @@ jobs:
           name: OrcaSlicer_profile_validator_Mac_universal_DMG_${{ env.ver }}
           path: ${{ github.workspace }}/OrcaSlicer_profile_validator_Mac_universal_${{ env.ver }}.dmg
           if-no-files-found: ignore
+          retention-days: 3
 
       - name: Deploy Mac release
         if: github.repository == 'SoftFever/OrcaSlicer' && github.ref == 'refs/heads/main' && inputs.os == 'macos-14'
@@ -244,6 +246,7 @@ jobs:
         with:
           name: OrcaSlicer_Windows_${{ env.ver }}_portable
           path: ${{ github.workspace }}/build/OrcaSlicer
+          retention-days: 3
 
       - name: Upload artifacts Win installer
         if: inputs.os == 'windows-latest'
@@ -251,6 +254,7 @@ jobs:
         with:
           name: OrcaSlicer_Windows_${{ env.ver }}
           path: ${{ github.workspace }}/build/OrcaSlicer*.exe
+          retention-days: 3
 
       - name: Upload artifacts Win PDB
         if: inputs.os == 'windows-latest'
@@ -258,6 +262,7 @@ jobs:
         with:
           name: PDB
           path: ${{ github.workspace }}/build/src/Release/Debug_PDB_${{ env.ver }}_for_developers_only.7z
+          retention-days: 3
 
       - name: Upload OrcaSlicer_profile_validator Win
         if: inputs.os == 'windows-latest'
@@ -265,6 +270,7 @@ jobs:
         with:
           name: OrcaSlicer_profile_validator_Windows_${{ env.ver }}
           path: ${{ github.workspace }}/build/src/Release/OrcaSlicer_profile_validator.exe
+          retention-days: 3
 
       - name: Deploy Windows release portable
         if: github.repository == 'SoftFever/OrcaSlicer' && github.ref == 'refs/heads/main' && inputs.os == 'windows-latest'
@@ -352,6 +358,7 @@ jobs:
         with:
           name: OrcaSlicer_Linux_ubuntu_${{ env.ubuntu-ver }}_${{ env.ver }}
           path: './build/OrcaSlicer_Linux_AppImage${{ env.ubuntu-ver-str }}_${{ env.ver }}.AppImage'
+          retention-days: 3
 
       - name: Upload OrcaSlicer_profile_validator Ubuntu
         if: ${{ ! env.ACT && inputs.os == 'ubuntu-20.04' || inputs.os == 'ubuntu-24.04' }}
@@ -361,6 +368,7 @@ jobs:
         with:
           name: OrcaSlicer_profile_validator_Linux_ubuntu_${{ env.ubuntu-ver }}_${{ env.ver }}
           path: './build/src/Release/OrcaSlicer_profile_validator'
+          retention-days: 3
 
       - name: Deploy Ubuntu release
         if: ${{ ! env.ACT && github.repository == 'SoftFever/OrcaSlicer' && github.ref == 'refs/heads/main' && (inputs.os == 'ubuntu-20.04' || inputs.os == 'ubuntu-24.04') }}
