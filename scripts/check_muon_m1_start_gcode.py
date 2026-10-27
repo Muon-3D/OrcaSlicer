@@ -11,7 +11,7 @@ So for every Muon3D printer profile this checks that the effective
 machine_start_gcode:
 
 * calls PRINT_START with the adaptive mesh bounds, which is what the printer
-  plans the lane from;
+  plans the lane from, and PURGE_LANE=1, which asks it to;
 * calls PURGE_LINE once, after PRINT_START;
 * has no move of its own that extrudes or goes below purge height.
 
@@ -26,9 +26,10 @@ from pathlib import Path
 VENDOR = Path(__file__).resolve().parent.parent / "resources" / "profiles" / "Muon3D"
 # At or above this the nozzle is travelling, not purging.
 PURGE_HEIGHT = 1.0
-MESH_BOUNDS = (
+LANE_PARAMS = (
     "MESH_MIN={adaptive_bed_mesh_min[0]},{adaptive_bed_mesh_min[1]}",
     "MESH_MAX={adaptive_bed_mesh_max[0]},{adaptive_bed_mesh_max[1]}",
+    "PURGE_LANE=1",
 )
 MOVE = re.compile(r"^G[0-3](?:\s|$)", re.I)
 WORD = re.compile(r"([A-Z])\s*(-?[0-9.]+)", re.I)
@@ -45,9 +46,9 @@ def problems(gcode):
     if len(starts) != 1:
         found.append("calls PRINT_START %d times, not once" % len(starts))
     else:
-        for bound in MESH_BOUNDS:
-            if bound not in lines[starts[0]].split():
-                found.append("PRINT_START does not pass " + bound)
+        for param in LANE_PARAMS:
+            if param not in lines[starts[0]].split():
+                found.append("PRINT_START does not pass " + param)
     if len(purges) != 1:
         found.append("calls PURGE_LINE %d times, not once" % len(purges))
     elif starts and purges[0] < starts[0]:
