@@ -12,12 +12,21 @@ on:
 
 jobs:
   claude:
+    # This runs on the self-hosted pool and anyone can comment on a public repository, so only
+    # the owner, members and collaborators can start it. Review events on a fork's pull request are
+    # skipped, and so are comments on any pull request's conversation tab, because that event does
+    # not say which repository the head branch comes from.
     if: |
+      (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.event_name != 'issue_comment' || !github.event.issue.pull_request) &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association || github.event.review.author_association || github.event.issue.author_association) &&
+      (
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
-    runs-on: ubuntu-latest
+      )
+    runs-on: ${{ fromJSON(vars.LINUX_RUNS_ON || '["self-hosted","muon-ci"]') }}
     permissions:
       contents: read
       pull-requests: read

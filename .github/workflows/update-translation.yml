@@ -7,7 +7,8 @@ on:
 jobs:
   update_translation:
     name: Update translation
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ fromJSON(vars.LINUX_RUNS_ON || '["self-hosted","muon-ci"]') }}
     steps:  
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -19,8 +20,10 @@ jobs:
 
       - name: Install gettext
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gettext
+          if ! command -v xgettext >/dev/null || ! command -v msgmerge >/dev/null || ! command -v msgfmt >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y gettext
+          fi
 
       - name: Update translation catalog
         run: |

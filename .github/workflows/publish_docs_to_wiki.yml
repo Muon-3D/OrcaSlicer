@@ -24,6 +24,9 @@ env:
 jobs:
   publish_docs_to_wiki:
     name: Publish docs to Wiki
+    # Pushes to the upstream project's wiki. This fork has no credentials for it, so the job
+    # would fail on every docs push here; it runs only in the upstream repository.
+    if: github.repository == 'SoftFever/OrcaSlicer'
     runs-on: ubuntu-latest
     steps:  
       - name: Checkout repository

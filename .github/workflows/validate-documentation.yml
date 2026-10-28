@@ -14,6 +14,9 @@ permissions:
 
 jobs:
   validate:
+    # The check is a Windows PowerShell script, so it needs a GitHub-hosted Windows runner:
+    # off unless ALLOW_HOSTED_RUNNERS is 'true'.
+    if: vars.ALLOW_HOSTED_RUNNERS == 'true'
     runs-on: windows-latest
     name: Check Documentation
     
