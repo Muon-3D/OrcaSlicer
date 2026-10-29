@@ -38,7 +38,7 @@ struct Advert
     std::string endpoint_prefix;      // 16 lower case hex digits
 };
 
-// Empty for a short value or a version this code does not know.
+// Empty for a short value or version 0.
 std::optional<Advert> decode_manufacturer_data(const std::vector<uint8_t> &data);
 
 // A printer heard nearby.

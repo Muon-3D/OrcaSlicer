@@ -7,8 +7,10 @@ namespace MuonBle {
 
 std::optional<Advert> decode_manufacturer_data(const std::vector<uint8_t> &data)
 {
-    // Version 1 is the only one there is. A later version may give the flags another meaning.
-    if (data.size() < 10 || data[0] != 1)
+    // Version 1 is the only one there is. Like blelink-proto's AdvData::decode, accept later
+    // versions with the same layout (unknown flag bits and trailing bytes are ignored), so a
+    // newer printer is still listed rather than dropped.
+    if (data.size() < 10 || data[0] < 1)
         return std::nullopt;
 
     static const char *hex = "0123456789abcdef";

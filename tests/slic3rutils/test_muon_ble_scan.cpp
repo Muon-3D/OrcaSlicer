@@ -30,7 +30,14 @@ TEST_CASE("Muon manufacturer data decodes", "[MuonBle]")
 
     CHECK_FALSE(decode_manufacturer_data({}));
     CHECK_FALSE(decode_manufacturer_data({1, 1, 0xde, 0xad, 0xbe, 0xef, 0, 1, 2})); // 9 bytes
-    CHECK_FALSE(decode_manufacturer_data({2, 1, 0xde, 0xad, 0xbe, 0xef, 0, 1, 2, 3})); // unknown version
+    CHECK_FALSE(decode_manufacturer_data({0, 1, 0xde, 0xad, 0xbe, 0xef, 0, 1, 2, 3})); // version 0
+
+    // A later version keeps the layout: still decoded, unknown flag bits and extra bytes ignored.
+    const auto later = decode_manufacturer_data({2, 0x05, 0xde, 0xad, 0xbe, 0xef, 0, 1, 2, 3, 0x99});
+    REQUIRE(later);
+    CHECK(later->unclaimed);
+    CHECK_FALSE(later->busy);
+    CHECK(later->endpoint_prefix == "deadbeef00010203");
 }
 
 TEST_CASE("An advertisement becomes a printer row only when it is an M1's", "[MuonBle]")
