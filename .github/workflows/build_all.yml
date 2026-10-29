@@ -45,6 +45,7 @@ concurrency:
 jobs:
   build_all:
     name: Build All
+    # Which runner each OS leg uses, and when it runs, is decided in build_check_cache.yml.
     strategy:
       fail-fast: false
       matrix:
@@ -63,6 +64,9 @@ jobs:
     secrets: inherit
   flatpak:
     name: "Flatpak"
+    # GitHub-hosted only: the privileged container mounts host directories and empties them to
+    # free disk space, and the aarch64 leg needs an arm64 machine. Off unless ALLOW_HOSTED_RUNNERS is 'true'.
+    if: vars.ALLOW_HOSTED_RUNNERS == 'true'
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-47
       options: --privileged

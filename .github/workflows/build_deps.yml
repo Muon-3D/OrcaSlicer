@@ -23,8 +23,13 @@ on:
 jobs:
   build_deps:
     name: Build Deps
-    if: inputs.build-deps-only || inputs.valid-cache != true
-    runs-on: ${{ inputs.os }}
+    # Runner policy: see build_check_cache.yml.
+    if: >-
+      (inputs.build-deps-only || inputs.valid-cache != true) &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+      ((startsWith(inputs.os, 'ubuntu-') && (github.event_name == 'workflow_dispatch' || vars.HEAVY_BUILDS == 'true')) ||
+       (!startsWith(inputs.os, 'ubuntu-') && vars.ALLOW_HOSTED_RUNNERS == 'true'))
+    runs-on: ${{ startsWith(inputs.os, 'ubuntu-') && fromJSON(vars.HEAVY_LINUX_RUNS_ON || vars.LINUX_RUNS_ON || '["self-hosted","muon-ci"]') || inputs.os }}
     env:
       date:
     steps:

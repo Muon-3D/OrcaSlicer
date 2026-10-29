@@ -16,7 +16,15 @@ on:
 jobs:
   check_cache: # determines if there is a cache and outputs variables used in caching process
     name: Check Cache
-    runs-on: ${{ inputs.os }}
+    # Runner policy for the build chain (repeated in build_deps.yml and build_orca.yml):
+    # - Linux builds use the self-hosted pool (HEAVY_LINUX_RUNS_ON, else LINUX_RUNS_ON), only for
+    #   pushes and same-repo PRs, and only on a manual run unless HEAVY_BUILDS is 'true'.
+    # - Windows and macOS need GitHub-hosted runners: off unless ALLOW_HOSTED_RUNNERS is 'true'.
+    if: >-
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+      ((startsWith(inputs.os, 'ubuntu-') && (github.event_name == 'workflow_dispatch' || vars.HEAVY_BUILDS == 'true')) ||
+       (!startsWith(inputs.os, 'ubuntu-') && vars.ALLOW_HOSTED_RUNNERS == 'true'))
+    runs-on: ${{ startsWith(inputs.os, 'ubuntu-') && fromJSON(vars.HEAVY_LINUX_RUNS_ON || vars.LINUX_RUNS_ON || '["self-hosted","muon-ci"]') || inputs.os }}
     outputs:
       cache-key: ${{ steps.set_outputs.outputs.cache-key }}
       cache-path: ${{ steps.set_outputs.outputs.cache-path }}
