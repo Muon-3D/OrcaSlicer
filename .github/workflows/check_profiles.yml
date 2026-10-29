@@ -28,6 +28,11 @@ jobs:
         run: |
           python3 ./scripts/orca_extra_profile_check.py
 
+      # KAN-990: the M1 start gcode leaves the purge to the printer.
+      - name: Check the Muon3D M1 start gcode
+        run: |
+          python3 ./scripts/check_muon_m1_start_gcode.py
+
       # download
       - name: Download 
         working-directory: ${{ github.workspace }}
