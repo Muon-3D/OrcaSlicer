@@ -4,6 +4,8 @@ on:
     types: [ released ]
 jobs:
   publish:
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: vars.ALLOW_HOSTED_RUNNERS == 'true'
     runs-on: windows-latest
     steps:
       - uses: vedantmgoyal9/winget-releaser@main

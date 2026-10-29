@@ -3,6 +3,7 @@ on:
   pull_request:
     branches:
     - main
+    - muon3d-m1
     paths:
     - 'resources/profiles/**'
     - ".github/workflows/check_profiles.yml"
@@ -21,7 +22,8 @@ permissions:
 jobs:
   check_profiles:
     name: Check profiles
-    runs-on: ubuntu-24.04
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ fromJSON(vars.LINUX_RUNS_ON || '["self-hosted","muon-ci"]') }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7

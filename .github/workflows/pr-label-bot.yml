@@ -16,7 +16,8 @@ permissions:
 
 jobs:
   request-label:
-    if: github.event_name == 'pull_request_target' && github.event.pull_request.author_association != 'COLLABORATOR' && github.event.pull_request.author_association != 'OWNER' && github.event.pull_request.author_association != 'MEMBER'
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: ${{ vars.ALLOW_HOSTED_RUNNERS == 'true' && (github.event_name == 'pull_request_target' && github.event.pull_request.author_association != 'COLLABORATOR' && github.event.pull_request.author_association != 'OWNER' && github.event.pull_request.author_association != 'MEMBER') }}
     permissions:
       contents: read
       pull-requests: write
@@ -80,7 +81,8 @@ jobs:
             }
 
   localization-pr:
-    if: github.event_name == 'pull_request_target'
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: ${{ vars.ALLOW_HOSTED_RUNNERS == 'true' && (github.event_name == 'pull_request_target') }}
     permissions:
       contents: read
       pull-requests: write
@@ -166,7 +168,8 @@ jobs:
             }
 
   apply-label:
-    if: github.event_name == 'issue_comment'
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: ${{ vars.ALLOW_HOSTED_RUNNERS == 'true' && (github.event_name == 'issue_comment') }}
     permissions:
       contents: read
       pull-requests: write
