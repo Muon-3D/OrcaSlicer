@@ -26,7 +26,8 @@ on:
 jobs:
   build_deps:
     name: Build Deps
-    if: ${{ !cancelled() && (inputs.build-deps-only || inputs.force-build || inputs.valid-cache != true) }}
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: ${{ vars.ALLOW_HOSTED_RUNNERS == 'true' && (!cancelled() && (inputs.build-deps-only || inputs.force-build || inputs.valid-cache != true)) }}
     runs-on: ${{ inputs.os }}
     env:
       date:
@@ -200,7 +201,8 @@ jobs:
   build_orca:
     name: Build OrcaSlicer
     needs: [build_deps]
-    if: ${{ !cancelled() && !inputs.build-deps-only && (inputs.force-build || (inputs.valid-cache == true && needs.build_deps.result == 'skipped') || (inputs.valid-cache != true && success())) }}
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: ${{ vars.ALLOW_HOSTED_RUNNERS == 'true' && (!cancelled() && !inputs.build-deps-only && (inputs.force-build || (inputs.valid-cache == true && needs.build_deps.result == 'skipped') || (inputs.valid-cache != true && success()))) }}
     uses: ./.github/workflows/build_orca.yml
     with:
       cache-key: ${{ inputs.cache-key }}

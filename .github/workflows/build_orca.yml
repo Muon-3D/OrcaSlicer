@@ -21,6 +21,8 @@ on:
 jobs:
   build_orca:
     name: Build OrcaSlicer
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: vars.ALLOW_HOSTED_RUNNERS == 'true'
     runs-on: ${{ inputs.os }}
     env:
       date:

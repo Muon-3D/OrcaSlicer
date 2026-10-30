@@ -21,7 +21,7 @@ concurrency:
 jobs:
   post_comment:
     name: Post PR comment
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(vars.LINUX_RUNS_ON || '["self-hosted","muon-ci"]') }}
     if: ${{ github.event.workflow_run.event == 'pull_request' && (github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure') }}
     steps:
       - name: Download artifact

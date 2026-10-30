@@ -7,6 +7,8 @@ on:
 
 jobs:
   auto-close-duplicates:
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: vars.ALLOW_HOSTED_RUNNERS == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
