@@ -1,0 +1,120 @@
+name: M1 Linux build and tests
+
+# Compile src/ and run the unit tests for PRs to muon3d-m1.
+# Public repo: GitHub-hosted STANDARD runner only (ubuntu-24.04), never self-hosted,
+# no larger/paid labels, no macOS or Windows. Deliberately independent of
+# vars.ALLOW_HOSTED_RUNNERS (which would also switch on the Windows/arm/macOS jobs).
+
+on:
+  pull_request:
+    branches:
+      - muon3d-m1
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'deps/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'build_linux.sh'
+      - 'scripts/**'
+      - '.github/workflows/m1_linux_build.yml'
+  push:
+    branches:
+      - muon3d-m1
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'deps/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'build_linux.sh'
+      - 'scripts/**'
+      - '.github/workflows/m1_linux_build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m1-linux-build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  linux_build_and_test:
+    name: Linux build and tests
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    env:
+      CMAKE_CCACHE: ccache
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 2G
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          lfs: 'false'
+
+      # Same apt step build_orca.yml uses (runs build_linux.sh -ur as root).
+      - name: Apt-Install Dependencies
+        uses: ./.github/actions/apt-install-deps
+
+      - name: Install ccache
+        run: sudo apt-get install -y --no-install-recommends ccache
+
+      # Restore always; save only on push to muon3d-m1 (so PRs never evict it).
+      - name: Restore deps cache
+        id: deps_cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ github.workspace }}/deps/build
+          key: m1-linux-ubuntu2404-deps-${{ hashFiles('deps/**') }}
+
+      - name: Build dependencies
+        if: steps.deps_cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p deps/build/destdir
+          ./build_linux.sh -drlL
+
+      - name: Save deps cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/muon3d-m1' && steps.deps_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ github.workspace }}/deps/build
+          key: m1-linux-ubuntu2404-deps-${{ hashFiles('deps/**') }}
+
+      - name: Restore ccache
+        id: ccache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: m1-linux-ubuntu2404-ccache-${{ github.sha }}
+          restore-keys: |
+            m1-linux-ubuntu2404-ccache-
+
+      # Tests are built together with the slicer (build_linux.sh requires -s with -t).
+      - name: Build slicer and tests
+        run: |
+          ccache --zero-stats
+          ./build_linux.sh -strlL
+          ccache --show-stats
+
+      - name: Save ccache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/muon3d-m1'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: m1-linux-ubuntu2404-ccache-${{ github.sha }}
+
+      - name: Run unit tests
+        timeout-minutes: 30
+        run: scripts/run_unit_tests.sh build/tests
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: m1-linux-test-results
+          path: ctest_results.xml
+          retention-days: 5
+          if-no-files-found: ignore
