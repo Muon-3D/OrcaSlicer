@@ -11,6 +11,8 @@ jobs:
   assign:
     permissions:
       issues: write
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: vars.ALLOW_HOSTED_RUNNERS == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Assign the user or unassign stale assignments
