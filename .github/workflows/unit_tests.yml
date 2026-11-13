@@ -23,6 +23,8 @@ jobs:
     # Static "Unit Tests"; the per-arch label is the caller's job name, so the
     # graph shows e.g. "Windows x64 / Unit Tests".
     name: Unit Tests
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: vars.ALLOW_HOSTED_RUNNERS == 'true'
     runs-on: ${{ inputs.os }}
     steps:
       - name: Checkout

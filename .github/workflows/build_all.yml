@@ -65,7 +65,8 @@ jobs:
           && '[{"arch":"","os":"orca-lnx-server"}]'
           || '[{"arch":"","os":"ubuntu-24.04"},{"arch":"aarch64","os":"ubuntu-24.04-arm"}]') }}
     # Don't run scheduled builds on forks:
-    if: ${{ !cancelled() && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer') }}
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: ${{ vars.ALLOW_HOSTED_RUNNERS == 'true' && (!cancelled() && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer')) }}
     uses: ./.github/workflows/build_check_cache.yml
     with:
       os: ${{ matrix.os }}
@@ -82,7 +83,8 @@ jobs:
           && '[{"arch":"x64","os":"orca-win-server"}]'
           || '[{"arch":"x64","os":"windows-latest"},{"arch":"arm64","os":"windows-11-arm"}]') }}
     # Don't run scheduled builds on forks:
-    if: ${{ !cancelled() && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer') }}
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: ${{ vars.ALLOW_HOSTED_RUNNERS == 'true' && (!cancelled() && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer')) }}
     uses: ./.github/workflows/build_check_cache.yml
     with:
       os: ${{ matrix.os }}
@@ -98,7 +100,8 @@ jobs:
           - arm64
           - x86_64
     # Don't run scheduled builds on forks:
-    if: ${{ !cancelled() && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer') }}
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: ${{ vars.ALLOW_HOSTED_RUNNERS == 'true' && (!cancelled() && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer')) }}
     uses: ./.github/workflows/build_check_cache.yml
     with:
       os: ${{ vars.SELF_HOSTED && 'orca-macos-arm64' || 'macos-14' }}
@@ -109,7 +112,8 @@ jobs:
   build_macos_universal:
     name: Build macOS Universal
     needs: build_macos_arch
-    if: ${{ !cancelled() && needs.build_macos_arch.result == 'success' && !inputs.build-deps-only && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer') }}
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: ${{ vars.ALLOW_HOSTED_RUNNERS == 'true' && (!cancelled() && needs.build_macos_arch.result == 'success' && !inputs.build-deps-only && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer')) }}
     uses: ./.github/workflows/build_orca.yml
     with:
       os: ${{ vars.SELF_HOSTED && 'orca-macos-arm64' || 'macos-14' }}
@@ -120,7 +124,8 @@ jobs:
   unit_tests_linux_x86_64:
     name: Linux x86_64
     needs: build_linux
-    if: ${{ !cancelled() && success() }}
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: ${{ vars.ALLOW_HOSTED_RUNNERS == 'true' && (!cancelled() && success()) }}
     uses: ./.github/workflows/unit_tests.yml
     with:
       os: ${{ vars.SELF_HOSTED && 'orca-lnx-server' || 'ubuntu-24.04' }}
@@ -128,7 +133,8 @@ jobs:
   unit_tests_linux_aarch64:
     name: Linux aarch64
     needs: build_linux
-    if: ${{ !cancelled() && success() && !vars.SELF_HOSTED }}
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: ${{ vars.ALLOW_HOSTED_RUNNERS == 'true' && (!cancelled() && success() && !vars.SELF_HOSTED) }}
     uses: ./.github/workflows/unit_tests.yml
     with:
       os: ubuntu-24.04-arm
@@ -136,7 +142,8 @@ jobs:
   unit_tests_windows_x64:
     name: Windows x64
     needs: build_windows
-    if: ${{ !cancelled() && success() }}
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: ${{ vars.ALLOW_HOSTED_RUNNERS == 'true' && (!cancelled() && success()) }}
     uses: ./.github/workflows/unit_tests.yml
     with:
       os: ${{ vars.SELF_HOSTED && 'orca-win-server' || 'windows-latest' }}
@@ -144,7 +151,8 @@ jobs:
   unit_tests_windows_arm64:
     name: Windows arm64
     needs: build_windows
-    if: ${{ !cancelled() && success() && !vars.SELF_HOSTED }}
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: ${{ vars.ALLOW_HOSTED_RUNNERS == 'true' && (!cancelled() && success() && !vars.SELF_HOSTED) }}
     uses: ./.github/workflows/unit_tests.yml
     with:
       os: windows-11-arm
@@ -153,7 +161,8 @@ jobs:
   unit_tests_macos_arm64:
     name: macOS arm64
     needs: build_macos_arch
-    if: ${{ !cancelled() && success() }}
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: ${{ vars.ALLOW_HOSTED_RUNNERS == 'true' && (!cancelled() && success()) }}
     uses: ./.github/workflows/unit_tests.yml
     with:
       os: ${{ vars.SELF_HOSTED && 'orca-macos-arm64' || 'macos-14' }}
@@ -167,7 +176,8 @@ jobs:
   slice_check_linux:
     name: Slice check (Linux ${{ vars.SELF_HOSTED && 'x86_64' || 'aarch64' }})
     needs: build_linux
-    if: ${{ !cancelled() && success() }}
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: ${{ vars.ALLOW_HOSTED_RUNNERS == 'true' && (!cancelled() && success()) }}
     # Follows whichever Linux leg built the validator.
     runs-on: ${{ vars.SELF_HOSTED && 'orca-lnx-server' || 'ubuntu-24.04-arm' }}
     steps:
@@ -186,7 +196,8 @@ jobs:
   publish_test_results:
     name: Publish Test Results
     needs: [unit_tests_linux_x86_64, unit_tests_linux_aarch64, unit_tests_windows_x64, unit_tests_windows_arm64, unit_tests_macos_arm64]
-    if: ${{ !cancelled() }}
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: ${{ vars.ALLOW_HOSTED_RUNNERS == 'true' && (!cancelled()) }}
     runs-on: ubuntu-latest
     steps:
       - name: Download Test Results
@@ -227,7 +238,8 @@ jobs:
           - arch: aarch64
             runner: ubuntu-24.04-arm
     # Don't run scheduled builds on forks; skip entirely on self-hosted runners
-    if: ${{ !cancelled() && !vars.SELF_HOSTED && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer') }}
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: ${{ vars.ALLOW_HOSTED_RUNNERS == 'true' && (!cancelled() && !vars.SELF_HOSTED && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer')) }}
 
     runs-on: ${{ matrix.variant.runner }}
     env:

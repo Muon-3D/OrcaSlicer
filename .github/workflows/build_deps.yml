@@ -26,7 +26,8 @@ on:
 jobs:
   build_deps:
     name: Build Deps
-    if: ${{ !cancelled() && (inputs.build-deps-only || inputs.force-build || inputs.valid-cache != true) }}
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: ${{ vars.ALLOW_HOSTED_RUNNERS == 'true' && (!cancelled() && (inputs.build-deps-only || inputs.force-build || inputs.valid-cache != true)) }}
     runs-on: ${{ inputs.os }}
     env:
       date:
@@ -45,21 +46,20 @@ jobs:
           key: ${{ inputs.cache-key }}
 
       - uses: lukka/get-cmake@latest
-        # The windows-11-arm runner needs CMake <= 3.31 (handled in the next step).
+        # Install a native ARM64 CMake with the VS2026 generator below.
         if: ${{ !(runner.os == 'Windows' && inputs.arch == 'arm64') }}
         with:
           cmakeVersion: "~4.3.0"  # use most recent 4.3.x version
           useLocalCache: true         # <--= Use the local cache (default is 'false').
           useCloudCache: true
 
-      - name: Install CMake 3.31.x (Windows ARM64)
-        # windows-11-arm ships CMake 4.x, which removed pre-3.5 policy
-        # compatibility AND has incomplete ASM_ARMASM linker modules
-        # (breaks Boost.Context on ARM64). Pin to the last 3.x release.
+      - name: Install CMake 4.3.5 (Windows ARM64)
+        # VS2026 requires CMake >=4.2. The batch runner keeps the
+        # existing CMAKE_POLICY_VERSION_MINIMUM=3.5 compatibility floor.
         if: runner.os == 'Windows' && inputs.arch == 'arm64'
         shell: pwsh
         run: |
-          $ver = "3.31.6"
+          $ver = "4.3.5"
           $url = "https://github.com/Kitware/CMake/releases/download/v$ver/cmake-$ver-windows-arm64.zip"
           Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\cmake.zip"
           Expand-Archive -Path "$env:RUNNER_TEMP\cmake.zip" -DestinationPath "$env:RUNNER_TEMP\cmake" -Force
@@ -137,10 +137,14 @@ jobs:
             $arch = "${{ inputs.arch }}"
             if ($arch -eq "arm64") {
               .\build_release_vs.bat deps arm64
+              if ($LASTEXITCODE -ne 0) { throw "Windows dependency build/pack failed: $LASTEXITCODE" }
               .\build_release_vs.bat pack arm64
+              if ($LASTEXITCODE -ne 0) { throw "Windows dependency build/pack failed: $LASTEXITCODE" }
             } else {
               .\build_release_vs.bat deps
+              if ($LASTEXITCODE -ne 0) { throw "Windows dependency build/pack failed: $LASTEXITCODE" }
               .\build_release_vs.bat pack
+              if ($LASTEXITCODE -ne 0) { throw "Windows dependency build/pack failed: $LASTEXITCODE" }
             }
         shell: pwsh
 
@@ -197,7 +201,8 @@ jobs:
   build_orca:
     name: Build OrcaSlicer
     needs: [build_deps]
-    if: ${{ !cancelled() && !inputs.build-deps-only && (inputs.force-build || (inputs.valid-cache == true && needs.build_deps.result == 'skipped') || (inputs.valid-cache != true && success())) }}
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: ${{ vars.ALLOW_HOSTED_RUNNERS == 'true' && (!cancelled() && !inputs.build-deps-only && (inputs.force-build || (inputs.valid-cache == true && needs.build_deps.result == 'skipped') || (inputs.valid-cache != true && success()))) }}
     uses: ./.github/workflows/build_orca.yml
     with:
       cache-key: ${{ inputs.cache-key }}
