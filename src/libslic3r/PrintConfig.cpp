@@ -10793,13 +10793,13 @@ void DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filamen
                 case coStrings:
                 {
                     ConfigOptionStrings * opt = this->option<ConfigOptionStrings>(key);
-                    if (!opt || opt->values.empty()) {
-                        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% not found or empty, skipping")%__LINE__%key;
+                    if (!opt) {
+                        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% not found, skipping")%__LINE__%key;
                         break;
                     }
                     std::vector<std::string> new_values;
 
-                    new_values.resize(filament_count, opt->values.front());
+                    new_values.resize(filament_count, opt->values.empty() ? decltype(new_values)::value_type() : opt->values.front());
                     for (int f_index = 0; f_index < filament_count; f_index++)
                     {
                         if (variant_index[f_index] < 0 || static_cast<size_t>(variant_index[f_index]) >= opt->size()) {
@@ -10814,13 +10814,13 @@ void DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filamen
                 case coInts:
                 {
                     ConfigOptionInts * opt = this->option<ConfigOptionInts>(key);
-                    if (!opt || opt->values.empty()) {
-                        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% not found or empty, skipping")%__LINE__%key;
+                    if (!opt) {
+                        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% not found, skipping")%__LINE__%key;
                         break;
                     }
                     std::vector<int> new_values;
 
-                    new_values.resize(filament_count, opt->values.front());
+                    new_values.resize(filament_count, opt->values.empty() ? decltype(new_values)::value_type() : opt->values.front());
                     for (int f_index = 0; f_index < filament_count; f_index++)
                     {
                         if (variant_index[f_index] < 0 || static_cast<size_t>(variant_index[f_index]) >= opt->size()) {
@@ -10835,13 +10835,13 @@ void DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filamen
                 case coFloats:
                 {
                     ConfigOptionFloats * opt = this->option<ConfigOptionFloats>(key);
-                    if (!opt || opt->values.empty()) {
-                        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% not found or empty, skipping")%__LINE__%key;
+                    if (!opt) {
+                        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% not found, skipping")%__LINE__%key;
                         break;
                     }
                     std::vector<double> new_values;
 
-                    new_values.resize(filament_count, opt->values.front());
+                    new_values.resize(filament_count, opt->values.empty() ? decltype(new_values)::value_type() : opt->values.front());
                     for (int f_index = 0; f_index < filament_count; f_index++)
                     {
                         if (variant_index[f_index] < 0 || static_cast<size_t>(variant_index[f_index]) >= opt->size()) {
@@ -10856,13 +10856,13 @@ void DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filamen
                 case coPercents:
                 {
                     ConfigOptionPercents * opt = this->option<ConfigOptionPercents>(key);
-                    if (!opt || opt->values.empty()) {
-                        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% not found or empty, skipping")%__LINE__%key;
+                    if (!opt) {
+                        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% not found, skipping")%__LINE__%key;
                         break;
                     }
                     std::vector<double> new_values;
 
-                    new_values.resize(filament_count, opt->values.front());
+                    new_values.resize(filament_count, opt->values.empty() ? decltype(new_values)::value_type() : opt->values.front());
                     for (int f_index = 0; f_index < filament_count; f_index++)
                     {
                         if (variant_index[f_index] < 0 || static_cast<size_t>(variant_index[f_index]) >= opt->size()) {
@@ -10877,13 +10877,13 @@ void DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filamen
                 case coFloatsOrPercents:
                 {
                     ConfigOptionFloatsOrPercents * opt = this->option<ConfigOptionFloatsOrPercents>(key);
-                    if (!opt || opt->values.empty()) {
-                        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% not found or empty, skipping")%__LINE__%key;
+                    if (!opt) {
+                        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% not found, skipping")%__LINE__%key;
                         break;
                     }
                     std::vector<FloatOrPercent> new_values;
 
-                    new_values.resize(filament_count, opt->values.front());
+                    new_values.resize(filament_count, opt->values.empty() ? decltype(new_values)::value_type() : opt->values.front());
                     for (int f_index = 0; f_index < filament_count; f_index++)
                     {
                         if (variant_index[f_index] < 0 || static_cast<size_t>(variant_index[f_index]) >= opt->size()) {
@@ -10898,13 +10898,13 @@ void DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filamen
                 case coBools:
                 {
                     ConfigOptionBools * opt = this->option<ConfigOptionBools>(key);
-                    if (!opt || opt->values.empty()) {
-                        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% not found or empty, skipping")%__LINE__%key;
+                    if (!opt) {
+                        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% not found, skipping")%__LINE__%key;
                         break;
                     }
                     std::vector<unsigned char> new_values;
 
-                    new_values.resize(filament_count, opt->values.front());
+                    new_values.resize(filament_count, opt->values.empty() ? decltype(new_values)::value_type() : opt->values.front());
                     for (int f_index = 0; f_index < filament_count; f_index++)
                     {
                         if (variant_index[f_index] < 0 || static_cast<size_t>(variant_index[f_index]) >= opt->size()) {
@@ -10919,13 +10919,13 @@ void DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filamen
                 case coEnums:
                 {
                     ConfigOptionEnumsGeneric * opt = this->option<ConfigOptionEnumsGeneric>(key);
-                    if (!opt || opt->values.empty()) {
-                        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% not found or empty, skipping")%__LINE__%key;
+                    if (!opt) {
+                        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% not found, skipping")%__LINE__%key;
                         break;
                     }
                     std::vector<int> new_values;
 
-                    new_values.resize(filament_count, opt->values.front());
+                    new_values.resize(filament_count, opt->values.empty() ? decltype(new_values)::value_type() : opt->values.front());
                     for (int f_index = 0; f_index < filament_count; f_index++)
                     {
                         if (variant_index[f_index] < 0 || static_cast<size_t>(variant_index[f_index]) >= opt->size()) {

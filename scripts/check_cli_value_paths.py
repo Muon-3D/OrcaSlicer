@@ -1,4 +1,4 @@
-"""Exercise the native CLI: boolean values, refusal of blocked directories, and a sinking-object slice."""
+"""Exercise the native CLI: booleans, blocked directories, a sinking-object slice and per-feature filament use."""
 import argparse
 import json
 import os
@@ -64,6 +64,30 @@ def check_sinking_object(binary, environment, root):
             'stderr': result.stderr[-2000:]}
 
 
+def check_wall_filament_used(binary, environment, root, model):
+    """Wall filament 2 with support off: filament 2 must count as used and appear in the G-code (PartPlate::get_extruders_under_cli)."""
+    directory = root / 'wall-filament'
+    directory.mkdir()
+    filaments = []
+    for name in ('cli-filament-a', 'cli-filament-b'):
+        path = directory / (name + '.json')
+        path.write_text(json.dumps({'type': 'filament', 'name': name, 'from': 'User'}))
+        filaments.append(str(path))
+    extra = ['--load-filaments', ';'.join(filaments), '--outer-wall-filament-id=2', '--inner-wall-filament-id=2',
+             '--enable-support=0']
+    result = run_slice(binary, environment, directory, model, extra)
+    gcode = sorted(directory.glob('*.gcode'))
+    used = None
+    if gcode:
+        for line in gcode[0].read_text(errors='replace').splitlines():
+            if line.startswith('; filament used [mm] ='):
+                used = [float(v) for v in line.split('=', 1)[1].split(',')]
+                break
+    return {'case': 'wall-filament-2-counts-as-used', 'rc': result.returncode, 'used_mm': used,
+            'passed': result.returncode == 0 and used is not None and len(used) >= 2 and used[1] > 0,
+            'stderr': result.stderr[-2000:]}
+
+
 def main():
     parser = argparse.ArgumentParser()
     for name in ('binary', 'output'):
@@ -103,6 +127,7 @@ def main():
                             'passed': result.returncode > 0 and blocker.read_text() == 'preserve these bytes',
                             'stderr': result.stderr})
         results.append(check_sinking_object(args.binary, environment, root))
+        results.append(check_wall_filament_used(args.binary, environment, root, model))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(results, indent=2))
     print(json.dumps({'passed': sum(r['passed'] for r in results), 'total': len(results)}))

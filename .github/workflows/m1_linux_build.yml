@@ -110,7 +110,7 @@ jobs:
         timeout-minutes: 30
         run: scripts/run_unit_tests.sh build/tests
 
-      # Real-binary CLI checks: boolean values, blocked directories, sinking-object slice.
+      # Real-binary CLI checks: booleans, blocked directories, sinking-object slice, wall-filament use.
       - name: CLI value, directory and slice checks
         run: |
           binary="$(find build -maxdepth 3 -name orca-slicer -type f -perm -u+x | head -n 1)"
