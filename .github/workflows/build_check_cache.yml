@@ -19,6 +19,8 @@ on:
 jobs:
   check_cache: # determines if there is a cache and outputs variables used in caching process
     name: Check Cache
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: vars.ALLOW_HOSTED_RUNNERS == 'true'
     runs-on: ${{ inputs.os }}
     outputs:
       cache-key: ${{ steps.set_outputs.outputs.cache-key }}
@@ -55,6 +57,8 @@ jobs:
   build_deps: # call next step
     name: Build Deps
     needs: [check_cache]
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: vars.ALLOW_HOSTED_RUNNERS == 'true'
     uses: ./.github/workflows/build_deps.yml
     with:
       cache-key: ${{ needs.check_cache.outputs.cache-key }}

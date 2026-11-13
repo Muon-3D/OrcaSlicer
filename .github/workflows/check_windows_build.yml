@@ -30,6 +30,8 @@ jobs:
             binary-arch: x86_64
           - os: windows-11-arm
             binary-arch: arm64
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: vars.ALLOW_HOSTED_RUNNERS == 'true'
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -54,6 +56,8 @@ jobs:
 
   windows_build_x64:
     needs: windows_failure_probes
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: vars.ALLOW_HOSTED_RUNNERS == 'true'
     uses: ./.github/workflows/build_check_cache.yml
     with:
       os: windows-latest
@@ -63,6 +67,8 @@ jobs:
 
   windows_build_arm64:
     needs: windows_failure_probes
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: vars.ALLOW_HOSTED_RUNNERS == 'true'
     uses: ./.github/workflows/build_check_cache.yml
     with:
       os: windows-11-arm
@@ -74,6 +80,8 @@ jobs:
   # github.sha is the tested PR merge revision, shared with the artifact producer.
   windows_tests_x64:
     needs: windows_build_x64
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: vars.ALLOW_HOSTED_RUNNERS == 'true'
     uses: ./.github/workflows/unit_tests.yml
     with:
       os: windows-latest
@@ -82,6 +90,8 @@ jobs:
 
   windows_tests_arm64:
     needs: windows_build_arm64
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: vars.ALLOW_HOSTED_RUNNERS == 'true'
     uses: ./.github/workflows/unit_tests.yml
     with:
       os: windows-11-arm
