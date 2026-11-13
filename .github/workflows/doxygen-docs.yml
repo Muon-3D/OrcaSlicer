@@ -15,7 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     # Only run on main branch of the main repository
-    if: github.repository == 'OrcaSlicer/OrcaSlicer' && github.ref == 'refs/heads/main'
+    # GitHub-hosted only: off unless ALLOW_HOSTED_RUNNERS is 'true' (this fork has no hosted-runner budget).
+    if: ${{ vars.ALLOW_HOSTED_RUNNERS == 'true' && (github.repository == 'OrcaSlicer/OrcaSlicer' && github.ref == 'refs/heads/main') }}
     permissions:
       contents: read
     steps:
