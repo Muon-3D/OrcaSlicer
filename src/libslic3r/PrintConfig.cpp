@@ -10788,6 +10788,7 @@ void DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filamen
                 continue;
             }
 
+            // Short variant vectors repeat their first value, like get_at(), instead of zero-filling slots.
             switch (optdef->type) {
                 case coStrings:
                 {
@@ -10798,11 +10799,11 @@ void DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filamen
                     }
                     std::vector<std::string> new_values;
 
-                    new_values.resize(filament_count);
+                    new_values.resize(filament_count, opt->values.empty() ? decltype(new_values)::value_type() : opt->values.front());
                     for (int f_index = 0; f_index < filament_count; f_index++)
                     {
                         if (variant_index[f_index] < 0 || static_cast<size_t>(variant_index[f_index]) >= opt->size()) {
-                            BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% variant index %3% out of range, skipping")%__LINE__%key%variant_index[f_index];
+                            BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% variant index %3% out of range, keeping first value")%__LINE__%key%variant_index[f_index];
                             continue;
                         }
                         new_values[f_index] = opt->get_at(variant_index[f_index]);
@@ -10819,11 +10820,11 @@ void DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filamen
                     }
                     std::vector<int> new_values;
 
-                    new_values.resize(filament_count);
+                    new_values.resize(filament_count, opt->values.empty() ? decltype(new_values)::value_type() : opt->values.front());
                     for (int f_index = 0; f_index < filament_count; f_index++)
                     {
                         if (variant_index[f_index] < 0 || static_cast<size_t>(variant_index[f_index]) >= opt->size()) {
-                            BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% variant index %3% out of range, skipping")%__LINE__%key%variant_index[f_index];
+                            BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% variant index %3% out of range, keeping first value")%__LINE__%key%variant_index[f_index];
                             continue;
                         }
                         new_values[f_index] = opt->get_at(variant_index[f_index]);
@@ -10840,11 +10841,11 @@ void DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filamen
                     }
                     std::vector<double> new_values;
 
-                    new_values.resize(filament_count);
+                    new_values.resize(filament_count, opt->values.empty() ? decltype(new_values)::value_type() : opt->values.front());
                     for (int f_index = 0; f_index < filament_count; f_index++)
                     {
                         if (variant_index[f_index] < 0 || static_cast<size_t>(variant_index[f_index]) >= opt->size()) {
-                            BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% variant index %3% out of range, skipping")%__LINE__%key%variant_index[f_index];
+                            BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% variant index %3% out of range, keeping first value")%__LINE__%key%variant_index[f_index];
                             continue;
                         }
                         new_values[f_index] = opt->get_at(variant_index[f_index]);
@@ -10861,11 +10862,11 @@ void DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filamen
                     }
                     std::vector<double> new_values;
 
-                    new_values.resize(filament_count);
+                    new_values.resize(filament_count, opt->values.empty() ? decltype(new_values)::value_type() : opt->values.front());
                     for (int f_index = 0; f_index < filament_count; f_index++)
                     {
                         if (variant_index[f_index] < 0 || static_cast<size_t>(variant_index[f_index]) >= opt->size()) {
-                            BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% variant index %3% out of range, skipping")%__LINE__%key%variant_index[f_index];
+                            BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% variant index %3% out of range, keeping first value")%__LINE__%key%variant_index[f_index];
                             continue;
                         }
                         new_values[f_index] = opt->get_at(variant_index[f_index]);
@@ -10882,11 +10883,11 @@ void DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filamen
                     }
                     std::vector<FloatOrPercent> new_values;
 
-                    new_values.resize(filament_count);
+                    new_values.resize(filament_count, opt->values.empty() ? decltype(new_values)::value_type() : opt->values.front());
                     for (int f_index = 0; f_index < filament_count; f_index++)
                     {
                         if (variant_index[f_index] < 0 || static_cast<size_t>(variant_index[f_index]) >= opt->size()) {
-                            BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% variant index %3% out of range, skipping")%__LINE__%key%variant_index[f_index];
+                            BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% variant index %3% out of range, keeping first value")%__LINE__%key%variant_index[f_index];
                             continue;
                         }
                         new_values[f_index] = opt->get_at(variant_index[f_index]);
@@ -10903,11 +10904,11 @@ void DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filamen
                     }
                     std::vector<unsigned char> new_values;
 
-                    new_values.resize(filament_count);
+                    new_values.resize(filament_count, opt->values.empty() ? decltype(new_values)::value_type() : opt->values.front());
                     for (int f_index = 0; f_index < filament_count; f_index++)
                     {
                         if (variant_index[f_index] < 0 || static_cast<size_t>(variant_index[f_index]) >= opt->size()) {
-                            BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% variant index %3% out of range, skipping")%__LINE__%key%variant_index[f_index];
+                            BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% variant index %3% out of range, keeping first value")%__LINE__%key%variant_index[f_index];
                             continue;
                         }
                         new_values[f_index] = opt->get_at(variant_index[f_index]);
@@ -10924,11 +10925,11 @@ void DynamicPrintConfig::update_values_to_printer_extruders_for_multiple_filamen
                     }
                     std::vector<int> new_values;
 
-                    new_values.resize(filament_count);
+                    new_values.resize(filament_count, opt->values.empty() ? decltype(new_values)::value_type() : opt->values.front());
                     for (int f_index = 0; f_index < filament_count; f_index++)
                     {
                         if (variant_index[f_index] < 0 || static_cast<size_t>(variant_index[f_index]) >= opt->size()) {
-                            BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% variant index %3% out of range, skipping")%__LINE__%key%variant_index[f_index];
+                            BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << boost::format(", Line %1%: option %2% variant index %3% out of range, keeping first value")%__LINE__%key%variant_index[f_index];
                             continue;
                         }
                         new_values[f_index] = opt->get_at(variant_index[f_index]);
