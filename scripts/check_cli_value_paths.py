@@ -57,7 +57,7 @@ def check_sinking_object(binary, environment, root):
     directory.mkdir()
     model = directory / 'sunk-cube.3mf'
     write_cube_3mf(model, -5)
-    result = run_slice(binary, environment, directory, model, ['--layer-gcode=G92 E0'])
+    result = run_slice(binary, environment, directory, model, ['--layer-change-gcode=G92 E0'])
     gcode = sorted(directory.glob('*.gcode'))
     return {'case': 'sinking-object-slice', 'rc': result.returncode, 'gcode': [g.name for g in gcode],
             'passed': result.returncode == 0 and bool(gcode) and gcode[0].stat().st_size > 0,
