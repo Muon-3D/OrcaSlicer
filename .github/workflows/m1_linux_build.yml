@@ -113,7 +113,11 @@ jobs:
       # Real-binary CLI checks: boolean values, blocked directories, sinking-object slice.
       - name: CLI value, directory and slice checks
         run: |
-          binary="$(find build -maxdepth 3 -name orca-slicer -type f -perm -u+x | head -n 1)"
+          # build/ can hold a wrapper script named orca-slicer beside the real binary; pick the ELF.
+          binary=""
+          while IFS= read -r candidate; do
+            if [ "$(head -c 4 "$candidate" | od -An -c | tr -d ' ')" = "177ELF" ]; then binary="$candidate"; break; fi
+          done < <(find build -maxdepth 4 -name orca-slicer -type f -perm -u+x)
           test -n "$binary" || { echo "orca-slicer binary not found under build/"; exit 1; }
           python3 scripts/check_cli_value_paths.py --binary "$binary" --output "$RUNNER_TEMP/cli-value-paths.json"
 
