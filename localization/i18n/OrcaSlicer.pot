@@ -16905,8 +16905,8 @@ msgid "No printers found."
 msgstr ""
 
 msgid ""
-"Printers are looked for on this network and on a new printer's own Wi-Fi "
-"hotspot (Muon-…)."
+"Printers are looked for on this network, on a new printer's own Wi-Fi "
+"hotspot (Muon-…), and nearby over Bluetooth."
 msgstr ""
 
 msgid "Look at the printer's screen:"
@@ -16946,6 +16946,35 @@ msgstr ""
 
 #, possible-c-format, possible-boost-format
 msgid "%1% (on its hotspot)"
+msgstr ""
+
+#, possible-c-format, possible-boost-format
+msgid "%1% (nearby over Bluetooth)"
+msgstr ""
+
+msgid "Muon printer"
+msgstr ""
+
+msgid "Bluetooth is off, so printers nearby were not looked for."
+msgstr ""
+
+msgid ""
+"Bluetooth isn't allowed for this app, so printers nearby were not looked for."
+msgstr ""
+
+#, possible-c-format, possible-boost-format
+msgid ""
+"%1% is nearby, but not on this network. Connect this computer to the "
+"printer's network, or type its address (Settings › Network on the printer)."
+msgstr ""
+
+#, possible-c-format, possible-boost-format
+msgid ""
+"%1% is nearby over Bluetooth, which the slicer can't print over. Set it up "
+"with the Muon3D app or at app.muon3d.com, then it appears on your network."
+msgstr ""
+
+msgid "Open app.muon3d.com"
 msgstr ""
 
 msgid "Ready"

@@ -130,6 +130,8 @@
   <string>NSApplication</string>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>NSBluetoothAlwaysUsageDescription</key>
+  <string>The printer search lists Muon printers nearby over Bluetooth. It does not connect to them.</string>
   <key>LSEnvironment</key>
   <dict>
     <key>ASAN_OPTIONS</key>

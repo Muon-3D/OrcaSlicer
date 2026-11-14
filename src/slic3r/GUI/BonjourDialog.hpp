@@ -28,6 +28,8 @@ struct BonjourReply;
 class BonjourReplyEvent;
 class ReplySet;
 struct LifetimeGuard;
+class MuonBleEvent;
+namespace MuonBle { class Scanner; }
 
 
 class BonjourDialog: public wxDialog
@@ -45,13 +47,17 @@ public:
 	bool show_and_lookup();
 	wxString get_selected() const;
 private:
-	// A Muon printer found other than by Bonjour: on its own hotspot.
+	// A Muon printer found other than by Bonjour: on its own hotspot, or nearby over Bluetooth.
 	struct MuonFound
 	{
-		std::string short_name;  // "walnut-8987", to match the same printer found by Bonjour
-		wxString    display;     // "Walnut · 8987"
-		wxString    address;     // what get_selected() returns
-		std::string setup;       // muon_setup's state, or empty when it was not readable
+		enum class Via { Hotspot, Bluetooth } via { Via::Hotspot };
+		std::string short_name;       // "walnut-8987", to match the same printer found another way
+		std::string endpoint_prefix;  // the first 8 bytes of its EndpointId in hex, or empty
+		wxString    display;          // "Walnut · 8987"
+		wxString    address;          // what get_selected() returns; empty over Bluetooth
+		std::string setup;            // muon_setup's state, or empty when it was not readable
+		std::string bluetooth_id;     // the scanner's id for the device
+		bool        state_known { false };  // over Bluetooth: the advertisement said whether it is set up
 	};
 
 	// What a list row shows: a Bonjour reply, or a printer found another way.
@@ -68,6 +74,9 @@ private:
 	std::vector<Row> rows;
 	wxStaticText *label;
 	wxBoxSizer *help_sizer { nullptr };
+	// "Bluetooth is off", when the Bluetooth scan could not run for a reason the owner can fix.
+	wxStaticText *bluetooth_note { nullptr };
+	std::unique_ptr<MuonBle::Scanner> bluetooth;
 	std::shared_ptr<Bonjour> bonjour;
 	std::shared_ptr<LifetimeGuard> guard;
 	std::unique_ptr<wxTimer> timer;
@@ -86,6 +95,9 @@ private:
 
 	virtual void on_reply(BonjourReplyEvent &);
 	void on_hotspot(wxCommandEvent &);
+	void on_bluetooth(MuonBleEvent &);
+	void on_bluetooth_radio(wxCommandEvent &);
+	void stop_bluetooth();
 	void on_complete(wxCommandEvent &);
 	void on_ok(wxCommandEvent &);
 	void on_timer(wxTimerEvent &);
