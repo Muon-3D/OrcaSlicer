@@ -74,7 +74,7 @@ def check_wall_filament_used(binary, environment, root, model):
         path.write_text(json.dumps({'type': 'filament', 'name': name, 'from': 'User'}))
         filaments.append(str(path))
     extra = ['--load-filaments', ';'.join(filaments), '--outer-wall-filament-id=2', '--inner-wall-filament-id=2',
-             '--enable-support=0']
+             '--enable-support=0', '--layer-change-gcode=G92 E0']
     result = run_slice(binary, environment, directory, model, extra)
     gcode = sorted(directory.glob('*.gcode'))
     used = None
