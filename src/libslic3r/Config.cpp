@@ -1812,12 +1812,22 @@ bool DynamicConfig::read_cli(int argc, const char* const argv[], t_config_option
             // to the end of the value.
             if (opt_base->type() == coBools && value.empty())
                 static_cast<ConfigOptionBools*>(opt_base)->values.push_back(!no);
-            else
+            else {
                 // Deserialize any other vector value (ConfigOptionInts, Floats, Percents, Points) the same way
                 // they get deserialized from an .ini file. For ConfigOptionStrings, that means that the C-style unescape
                 // will be applied for values enclosed in quotes, while values non-enclosed in quotes are left to be
                 // unescaped by the calling shell.
-				opt_vector->deserialize(value, true);
+                bool deserialized = false;
+                try {
+                    deserialized = opt_vector->deserialize(value, true);
+                } catch (const std::exception &) {
+                    // Non-nullable vector options throw for nil instead of returning false.
+                }
+                if (!deserialized) {
+                    boost::nowide::cerr << "Invalid value for option --" << token.c_str() << std::endl;
+                    return false;
+                }
+            }
         } else if (opt_base->type() == coBool) {
             if (value.empty())
                 static_cast<ConfigOptionBool*>(opt_base)->value = !no;
