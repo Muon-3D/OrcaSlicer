@@ -36,6 +36,8 @@ finish-args:
   - --talk-name=com.orcaslicer.OrcaSlicer.InstanceCheck.*
   - --own-name=com.orcaslicer.OrcaSlicer.InstanceCheck.*
   - --system-talk-name=org.freedesktop.UDisks2
+  # Hear Muon printers nearby over Bluetooth LE (MuonBleScanLinux.cpp: BlueZ discovery, no connection)
+  - --system-talk-name=org.bluez
   - --env=SPNAV_SOCKET=/run/spnav.sock
 
 modules:

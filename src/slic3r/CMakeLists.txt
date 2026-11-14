@@ -695,6 +695,8 @@ set(SLIC3R_GUI_SOURCES
     Utils/minilzo_extension.hpp
     Utils/MKS.cpp
     Utils/MKS.hpp
+    Utils/MuonBleScan.cpp
+    Utils/MuonBleScan.hpp
     Utils/MuonDiscovery.cpp
     Utils/MuonDiscovery.hpp
     Utils/NetworkAgent.cpp
@@ -761,6 +763,7 @@ add_subdirectory(GUI/DeviceTab)
 
 if (WIN32)
     list(APPEND SLIC3R_GUI_SOURCES
+            Utils/MuonBleScanWin.cpp
             GUI/dark_mode/dark_mode.hpp
             GUI/dark_mode/IatHook.hpp
             GUI/dark_mode/UAHMenuBar.hpp
@@ -771,6 +774,7 @@ endif ()
 
 if (APPLE)
     list(APPEND SLIC3R_GUI_SOURCES
+            Utils/MuonBleScanMac.mm
             Utils/RetinaHelperImpl.mm
             Utils/MacDarkMode.mm
             GUI/RemovableDriveManagerMM.mm
@@ -795,6 +799,13 @@ endif ()
 if (UNIX AND NOT APPLE)
     list(APPEND SLIC3R_GUI_SOURCES
         GUI/Printer/gstbambusrc.c
+    )
+endif ()
+
+# Muon Bluetooth scan: one file per platform; elsewhere MuonBleScan.cpp has a no-op.
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    list(APPEND SLIC3R_GUI_SOURCES
+        Utils/MuonBleScanLinux.cpp
     )
 endif ()
 
@@ -875,6 +886,7 @@ elseif (APPLE)
     else()
         target_link_libraries(libslic3r_gui ${DISKARBITRATION_LIBRARY} "-framework Security")
     endif()
+    target_link_libraries(libslic3r_gui "-framework CoreBluetooth")
 endif()
 
 if (SLIC3R_STATIC)
@@ -893,6 +905,10 @@ endif ()
 
 if (SLIC3R_PCH AND NOT SLIC3R_SYNTAXONLY)
     add_precompiled_header(libslic3r_gui pchheader.hpp FORCEINCLUDE)
+    if (WIN32)
+        # Keeps wx and boost out of the WinRT headers.
+        set_source_files_properties(Utils/MuonBleScanWin.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+    endif ()
 endif ()
 
 # We need to implement some hacks for wxWidgets and touch the underlying GTK
@@ -911,6 +927,11 @@ if (UNIX AND NOT APPLE)
     endif()
     target_include_directories(libslic3r_gui SYSTEM PRIVATE ${GTK${SLIC3R_GTK}_INCLUDE_DIRS} ${LIBSECRET_INCLUDE_DIRS} ${webkit2gtk_INCLUDE_DIRS})
     target_link_libraries(libslic3r_gui ${GTK${SLIC3R_GTK}_LIBRARIES} fontconfig ${LIBSECRET_LIBRARIES})
+
+    # GDBus, for the Muon Bluetooth scan through BlueZ (MuonBleScanLinux.cpp). GTK depends on it already.
+    pkg_check_modules(GIO REQUIRED gio-2.0)
+    target_include_directories(libslic3r_gui SYSTEM PRIVATE ${GIO_INCLUDE_DIRS})
+    target_link_libraries(libslic3r_gui ${GIO_LIBRARIES})
 
     # Propagate GDK backend detection results as compile definitions so that
     # LinuxDisplayBackend.cpp can include the right GDK headers.
